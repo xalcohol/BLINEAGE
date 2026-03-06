@@ -524,9 +524,9 @@ yOff+=12
 -- Bottom row: [AUTO OFF] [⚙] [◉] [📁]  →→→  [✕]  |  status right-aligned
 -- Bottom row: [AUTO] [⚙] [◉] [📁]  ···  [X]
 local autoBtn=newButton(cardFrame,{
-    Position=UDim2.new(0,PAD,0,yOff), Size=UDim2.new(0,88,0,28),
+    Position=UDim2.new(0,PAD,0,yOff), Size=UDim2.new(0,76,0,28),
     BackgroundColor3=C.btnBg, Font=Enum.Font.GothamBold,
-    TextSize=11, TextColor3=C.textDim, Text="AUTO  OFF", ZIndex=13,
+    TextSize=11, TextColor3=C.textDim, Text="AUTO OFF", ZIndex=13,
 })
 addCorner(autoBtn,8)
 local autoBtnStroke=addStroke(autoBtn,1.5,C.btnBorder)
@@ -541,9 +541,9 @@ local function makeInlineTabBtn(icon, xPos)
     addCorner(b,8); addStroke(b,1.5,C.btnBorder); return b
 end
 
-local settingsTabBtn = makeInlineTabBtn("⚙", PAD+94)
-local webhookTabBtn  = makeInlineTabBtn("◉", PAD+128)
-local configTabBtn   = makeInlineTabBtn("📁", PAD+162)
+local settingsTabBtn = makeInlineTabBtn("⚙", PAD+82)
+local webhookTabBtn  = makeInlineTabBtn("◉", PAD+116)
+local configTabBtn   = makeInlineTabBtn("📁", PAD+150)
 
 -- Kill button — far right, plain "X" (unicode ✕ renders as box on some fonts)
 local killBtn=newButton(cardFrame,{
@@ -1201,11 +1201,17 @@ local function renderConditions()
     end
 end
 
-condChevBtn.MouseButton1Click:Connect(function()
-    condListOpen=not condListOpen
-    condListContainer.Visible=condListOpen
-    condChevBtn.Text=condListOpen and "\xe2\x96\xbc" or "\xe2\x96\xb6"
-end)
+local function toggleCondList()
+    condListOpen = not condListOpen
+    condListContainer.Visible = condListOpen
+    condChevBtn.Text = condListOpen and "▼" or "▶"
+end
+condChevBtn.MouseButton1Click:Connect(toggleCondList)
+local condHeaderClickBtn=newButton(condHeaderRow,{
+    BackgroundTransparency=1, Size=UDim2.new(1,0,1,0),
+    Text="", ZIndex=26,
+})
+condHeaderClickBtn.MouseButton1Click:Connect(toggleCondList)
 renderConditions()
 
 -- ═══════════════════════════════════════════════════════════
@@ -1400,16 +1406,20 @@ local function setWizStep(s)
             for gi, g in ipairs(GRADE_NAMES) do
                 local sel=wData[key]==g
                 local gv=g
+                -- bg: very dark tint of grade colour when selected, near-black when not
+                local selBg = Color3.new(gc(g).R*0.08, gc(g).G*0.08, gc(g).B*0.08)
                 local gradebtn=newButton(gradeHolder,{
                     Size=UDim2.new(0,36,0,28),
-                    BackgroundColor3=sel and Color3.fromRGB(18,14,4) or Color3.fromRGB(17,17,24),
+                    BackgroundColor3=sel and selBg or Color3.fromRGB(17,17,24),
                     Font=Enum.Font.Code, TextSize=13,
-                    TextColor3=sel and gc(g) or Color3.fromRGB(46,46,60),
+                    TextColor3=sel and gc(g) or Color3.fromRGB(52,52,68),
                     Text=g, ZIndex=25,
                 })
                 gradebtn.LayoutOrder=gi
                 addCorner(gradebtn,5)
-                addStroke(gradebtn,1.5,sel and Color3.fromRGB(80,60,10) or Color3.fromRGB(30,30,40))
+                -- border glows grade colour when selected, dim when not
+                addStroke(gradebtn, sel and 1.5 or 1,
+                    sel and gc(g) or Color3.fromRGB(28,28,38))
                 gradebtn.MouseButton1Click:Connect(function()
                     wData[key]=gv; setWizStep(0)
                 end)
@@ -1435,39 +1445,43 @@ local function setWizStep(s)
         })
         subLbl.TextWrapped=true; subLbl.LayoutOrder=1
 
-        local grid=newFrame(wizScroll,{
+        -- Single-column list: skin name left, stand name right (HTML style)
+        local skinList=newFrame(wizScroll,{
             BackgroundTransparency=1,
             Size=UDim2.new(1,-28,0,0), ZIndex=23,
         })
-        grid.AutomaticSize=Enum.AutomaticSize.Y
-        grid.LayoutOrder=2
-        local gl=Instance.new("UIGridLayout")
-        gl.CellSize=UDim2.new(0.5,-4,0,44)
-        gl.CellPadding=UDim2.new(0,4,0,4)
-        gl.SortOrder=Enum.SortOrder.LayoutOrder
-        gl.Parent=grid
+        skinList.AutomaticSize=Enum.AutomaticSize.Y
+        skinList.LayoutOrder=2
+        addListLayout(skinList, 3)
 
         for _, sk in ipairs(SKIN_LIST) do
             local sel=table.find(wData.skins,sk.name)~=nil
             local skn=sk.name; local sts=sk.stand
-            local btn=newButton(grid,{
-                BackgroundColor3=sel and Color3.fromRGB(24,10,40) or Color3.fromRGB(20,20,32),
-                Size=UDim2.new(0,1,0,1),
+            local row=newButton(skinList,{
+                BackgroundColor3=sel and Color3.fromRGB(22,10,36) or Color3.fromRGB(19,19,28),
+                Size=UDim2.new(1,0,0,30),
                 Text="", ZIndex=24,
             })
-            addCorner(btn,7)
-            addStroke(btn,1.5,sel and Color3.fromRGB(102,51,170) or Color3.fromRGB(30,30,48))
-            newLabel(btn,{
-                Position=UDim2.new(0,8,0,4), Size=UDim2.new(1,-16,0,18),
+            addCorner(row,6)
+            addStroke(row,1, sel and Color3.fromRGB(102,51,170) or Color3.fromRGB(28,28,42))
+            -- skin name — left
+            newLabel(row,{
+                Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
                 Font=Enum.Font.GothamSemibold, TextSize=11,
-                TextColor3=sel and Color3.fromRGB(187,136,238) or C.textDim, Text=skn, ZIndex=25,
+                TextColor3=sel and Color3.fromRGB(187,136,238) or C.textDim,
+                TextXAlignment=Enum.TextXAlignment.Left,
+                Text=skn, ZIndex=25,
             })
-            newLabel(btn,{
-                Position=UDim2.new(0,8,0,24), Size=UDim2.new(1,-16,0,14),
+            -- stand name — right
+            newLabel(row,{
+                AnchorPoint=Vector2.new(1,0.5),
+                Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.38,0,1,0),
                 Font=Enum.Font.Code, TextSize=9,
-                TextColor3=sel and Color3.fromRGB(119,68,170) or C.textFaint, Text=sts, ZIndex=25,
+                TextColor3=sel and Color3.fromRGB(136,85,187) or C.textFaint,
+                TextXAlignment=Enum.TextXAlignment.Right,
+                Text=sts, ZIndex=25,
             })
-            btn.MouseButton1Click:Connect(function()
+            row.MouseButton1Click:Connect(function()
                 local idx=table.find(wData.skins,skn)
                 if idx then table.remove(wData.skins,idx)
                 else table.insert(wData.skins,skn) end
@@ -1581,17 +1595,26 @@ end)
 --  WINDOW OPEN / CLOSE
 -- ═══════════════════════════════════════════════════════════
 local function openSubWin(win)
-    -- AbsolutePosition is reliable after first render; use task.defer to wait one frame
     task.defer(function()
         local hp = hudHolder.AbsolutePosition
         local hs = hudHolder.AbsoluteSize
-        -- If AbsolutePosition is still 0,0 (not yet rendered), fall back to right side of screen
+        local vp = workspace.CurrentCamera.ViewportSize
         if hp.X == 0 and hp.Y == 0 then
-            local vp = workspace.CurrentCamera.ViewportSize
-            hp = Vector2.new(vp.X - (CARD_W + STRIP_W) - 20, vp.Y / 2 - 100)
-            hs = Vector2.new(CARD_W + STRIP_W, 200)
+            hp = Vector2.new(20, vp.Y / 2 - 100)
+            hs = Vector2.new(CARD_W, 200)
         end
-        win.Position = UDim2.new(0, hp.X + hs.X + 10, 0, hp.Y)
+        local winW = win.AbsoluteSize.X > 0 and win.AbsoluteSize.X or 300
+        -- If HUD centre is on left half of screen, open to the right; else to the left
+        local hudCentreX = hp.X + hs.X * 0.5
+        local xPos
+        if hudCentreX < vp.X * 0.5 then
+            xPos = hp.X + hs.X + 10          -- right of HUD
+        else
+            xPos = hp.X - winW - 10           -- left of HUD
+        end
+        -- Clamp so window never goes off-screen
+        xPos = math.max(4, math.min(xPos, vp.X - winW - 4))
+        win.Position = UDim2.new(0, xPos, 0, math.max(4, hp.Y))
         win.Visible  = true
     end)
 end
@@ -1773,14 +1796,14 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
         autoBtn.BackgroundColor3=lerpColor(Color3.fromRGB(34,12,12),Color3.fromRGB(56,18,18),p)
         autoBtnStroke.Color=lerpColor(Color3.fromRGB(102,20,20),Color3.fromRGB(200,44,44),p)
         autoBtn.TextColor3=Color3.fromRGB(200,68,68)
-        autoBtn.Text="AUTO  ON"
+        autoBtn.Text="AUTO ON"
         statusLabel.Text="rolling..."
         statusLabel.TextColor3=Color3.fromRGB(170,40,40)
     else
         autoBtn.BackgroundColor3=C.btnBg
         autoBtnStroke.Color=C.btnBorder
         autoBtn.TextColor3=C.textDim
-        autoBtn.Text="AUTO  OFF"
+        autoBtn.Text="AUTO OFF"
         local sc,st=C.textFaint,"IDLE"
         if     stopReason=="GLOBAL_JACKPOT" or stopReason=="CONDITION_JACKPOT" then sc=C.gold;   st="\xe2\x9c\xa6  jackpot!"
         elseif stopReason=="CONDITION_TRAIT"   then sc=C.purple; st="\xe2\x98\x85  trait match"
