@@ -948,8 +948,8 @@ local function serializeConfig()
 end
 
 local function applyConfig(cfg)
-    -- Restore conditions — mutate in place so all closures see the update
-    while #Conditions > 0 do table.remove(Conditions) end
+    -- Restore conditions
+    Conditions = {}
     for _, c in ipairs(cfg.conditions or {}) do
         table.insert(Conditions, {
             stands = c.stands or {},
@@ -964,7 +964,7 @@ local function applyConfig(cfg)
     if cfg.globalStop    ~= nil then Settings.globalStop    = cfg.globalStop    end
     if cfg.autorollDelay ~= nil then Settings.autorollDelay = cfg.autorollDelay end
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
-        cfgNameBox.Text = cfg.webhookURL
+        cfgNameBox.Text = cfg.webhookURL  -- update URL box if open
     end
     renderConditions()
 end
@@ -1031,17 +1031,19 @@ local function renderConfigList()
         })
 
         local ci=idx
-        -- Clicking row body selects it (highlights border)
+
+        -- Row click to select
         local rowClickBtn=newButton(row,{
-            BackgroundTransparency=1, Size=UDim2.new(1,-96,1,0),
-            Position=UDim2.new(0,0,0,0), Text="", ZIndex=26,
+            BackgroundTransparency=1,
+            Position=UDim2.new(0,0,0,0), Size=UDim2.new(1,-96,1,0),
+            Text="", ZIndex=26,
         })
         rowClickBtn.MouseButton1Click:Connect(function()
             selectedConfig = (selectedConfig==ci) and nil or ci
             renderConfigList()
         end)
 
-        -- L = load/apply config
+        -- L = load/apply
         local loadBtn=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-6,0.5,0),
@@ -1052,13 +1054,20 @@ local function renderConfigList()
         })
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         loadBtn.MouseButton1Click:Connect(function()
-            applyConfig(savedConfigs[ci].data)
-            -- sync condition list visibility so it shows immediately
-            condListContainer.Visible = true
-            condListOpen = true
+            -- mutate Conditions in place so renderConditions sees the update
+            while #Conditions > 0 do table.remove(Conditions) end
+            for _, c in ipairs((savedConfigs[ci].data.conditions) or {}) do
+                table.insert(Conditions, {
+                    stands=c.stands or {}, minStr=c.minStr or "A",
+                    minSpd=c.minSpd or "A", minSpc=c.minSpc or "A",
+                    skins=c.skins or {}, traits=c.traits or {},
+                })
+            end
+            condListContainer.Visible=true; condListOpen=true
+            renderConditions()
         end)
 
-        -- S = overwrite this slot with current settings
+        -- S = overwrite slot
         local saveBtn2=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-34,0.5,0),
@@ -1070,8 +1079,7 @@ local function renderConfigList()
         addCorner(saveBtn2,6); addStroke(saveBtn2,1,Color3.fromRGB(80,60,10))
         saveBtn2.MouseButton1Click:Connect(function()
             local snap=serializeConfig()
-            savedConfigs[ci].data=snap
-            savedConfigs[ci].conditions=snap.conditions
+            savedConfigs[ci].data=snap; savedConfigs[ci].conditions=snap.conditions
             persistConfigs(); renderConfigList()
         end)
 
