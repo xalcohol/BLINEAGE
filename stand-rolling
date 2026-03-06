@@ -265,6 +265,7 @@ do local e=PlayerGui:FindFirstChild("StandRollHUD") if e then e:Destroy() end en
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name="StandRollHUD"; ScreenGui.ResetOnSpawn=false
 ScreenGui.IgnoreGuiInset=true; ScreenGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder=999
 ScreenGui.Parent=PlayerGui
 
 local C = {
@@ -542,8 +543,8 @@ local function makeInlineTabBtn(icon, xPos)
 end
 
 local settingsTabBtn = makeInlineTabBtn("⚙", PAD+82)
-local webhookTabBtn  = makeInlineTabBtn("◉", PAD+116)
-local configTabBtn   = makeInlineTabBtn("📁", PAD+150)
+local configTabBtn   = makeInlineTabBtn("📁", PAD+116)
+local webhookTabBtn  = makeInlineTabBtn("◉", PAD+150)
 
 -- Kill button — far right, plain "X" (unicode ✕ renders as box on some fonts)
 local killBtn=newButton(cardFrame,{
@@ -1064,10 +1065,10 @@ local function renderConfigList()
         local loadBtn=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-36,0.5,0),
-            Size=UDim2.new(0,28,0,26),
+            Size=UDim2.new(0,36,0,26),
             BackgroundColor3=Color3.fromRGB(20,30,50),
             Font=Enum.Font.GothamBold, TextSize=9,
-            TextColor3=Color3.fromRGB(85,153,238), Text="↓", ZIndex=26,
+            TextColor3=Color3.fromRGB(85,153,238), Text="LOAD", ZIndex=26,
         })
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         local ci=idx
@@ -1122,6 +1123,7 @@ saveConfigBtn.MouseButton1Click:Connect(function()
     end
     table.insert(savedConfigs,{name=name, data=serializeConfig(), conditions=Conditions})
     persistConfigs(); renderConfigList()
+    cfgNameBox.Text = ""
 end)
 
 -- Load persisted configs from StringValue on start
@@ -1582,7 +1584,7 @@ local function setWizStep(s)
                         AnchorPoint=Vector2.new(1,0.5),
                         Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.38,0,1,0),
                         Font=Enum.Font.Code, TextSize=9,
-                        TextColor3=sel and Color3.fromRGB(136,85,187) or C.textFaint,
+                        TextColor3=sel and Color3.fromRGB(136,85,187) or Color3.fromRGB(90,90,120),
                         TextXAlignment=Enum.TextXAlignment.Right,
                         Text=standLabel, ZIndex=25,
                     })
@@ -1778,7 +1780,29 @@ subWinList = {
 }
 
 settingsTabBtn.MouseButton1Click:Connect(function() toggleSubWin(settingsWin,settingsTabBtn) end)
-webhookTabBtn.MouseButton1Click:Connect(function()  toggleSubWin(webhookWin, webhookTabBtn)  end)
+-- Webhook disabled — dim button, hover tooltip, block click
+webhookTabBtn.TextColor3 = Color3.fromRGB(40,40,56)
+webhookTabBtn.BackgroundColor3 = Color3.fromRGB(16,16,24)
+local whStroke = webhookTabBtn:FindFirstChildOfClass("UIStroke")
+if whStroke then whStroke.Color = Color3.fromRGB(24,24,36) end
+
+local whTip = newLabel(ScreenGui, {
+    BackgroundColor3 = Color3.fromRGB(12,12,20),
+    Size = UDim2.new(0,160,0,22), Visible = false, ZIndex = 300,
+    Font = Enum.Font.GothamSemibold, TextSize = 10,
+    TextColor3 = Color3.fromRGB(120,40,40), Text = "Webhook coming soon",
+})
+addCorner(whTip, 5); addStroke(whTip, 1, Color3.fromRGB(60,20,20))
+addPadding(whTip, 6)
+
+webhookTabBtn.MouseEnter:Connect(function()
+    local ap = webhookTabBtn.AbsolutePosition
+    local as = webhookTabBtn.AbsoluteSize
+    whTip.Position = UDim2.new(0, ap.X, 0, ap.Y - 28)
+    whTip.Visible = true
+end)
+webhookTabBtn.MouseLeave:Connect(function() whTip.Visible = false end)
+-- no click handler — intentionally disabled
 configTabBtn.MouseButton1Click:Connect(function()   toggleSubWin(configWin,  configTabBtn)   end)
 settingsCloseBtn.MouseButton1Click:Connect(function() closeAllSubWins() end)
 webhookCloseBtn.MouseButton1Click:Connect(function()  closeAllSubWins() end)
