@@ -1,99 +1,112 @@
---// StandRollHUD_v3  —  StarterPlayerScripts  →  LocalScript
---// Y = kill script   |   GUI buttons for everything else
+--[[
+  StandRollHUD_v3  —  LocalScript  →  StarterPlayerScripts
+  Kill: Y key  or  ✕ button
+  
+  CONDITIONS structure:
+    { stands={string}, minStr, minSpd, minSpc, skins={string}, traits={string} }
+  
+  GLOW: single RenderStepped tick drives ALL window strokes simultaneously.
+        Triple-S (allS) → rainbow HSV cycle. Otherwise → averaged grade color lerped.
+]]
 
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 --  SERVICES
---==========================================================
-local Players          = game:GetService("Players")
-local ReplicatedStorage= game:GetService("ReplicatedStorage")
-local RunService       = game:GetService("RunService")
-local TweenService     = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local HttpService      = game:GetService("HttpService")
-local TextService      = game:GetService("TextService")
+-- ═══════════════════════════════════════════════════════════
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
+local UserInputService  = game:GetService("UserInputService")
+local HttpService       = game:GetService("HttpService")
+local TextService       = game:GetService("TextService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
---==========================================================
---  REMOTES / DATA PATHS
---==========================================================
-local useItem     = ReplicatedStorage:WaitForChild("requests")
-                    :WaitForChild("character"):WaitForChild("use_item")
-local StandValue  = LocalPlayer:WaitForChild("PlayerData")
-                    :WaitForChild("SlotData"):WaitForChild("Stand")
+-- ═══════════════════════════════════════════════════════════
+--  REMOTES / DATA
+-- ═══════════════════════════════════════════════════════════
+local useItem    = ReplicatedStorage:WaitForChild("requests")
+                   :WaitForChild("character"):WaitForChild("use_item")
+local StandValue = LocalPlayer:WaitForChild("PlayerData")
+                   :WaitForChild("SlotData"):WaitForChild("Stand")
 
--- Stand + Skin name discovery
+-- ═══════════════════════════════════════════════════════════
+--  STAND + SKIN DISCOVERY  (live from game folders)
+-- ═══════════════════════════════════════════════════════════
 local standsFolder = ReplicatedStorage:WaitForChild("assets")
                      :WaitForChild("models"):WaitForChild("stands")
 local skinsFolder  = standsFolder:FindFirstChild("Skins")
 
---==========================================================
---  RUNTIME CONSTANTS  (populated from game folders)
---==========================================================
-local STAND_NAMES = {}   -- all stand names in the game
-local SKIN_LIST   = {}   -- { {name=string, stand=string}, ... }
+local STAND_NAMES = {}
+local SKIN_LIST   = {}   -- { {name=string, stand=string} }
 
-do
-    -- Collect stand names (every direct child of "stands" that isn't "Skins")
-    for _, child in ipairs(standsFolder:GetChildren()) do
-        if child.Name ~= "Skins" then
-            table.insert(STAND_NAMES, child.Name)
-        end
-    end
-    table.sort(STAND_NAMES)
-
-    -- Collect skins — each skin model is a child of the Skins folder.
-    -- Skin models are named "<SkinName>" and have a string attribute or
-    -- a child called "Stand" indicating which stand they belong to.
-    -- If that attribute is absent we leave stand = "Unknown".
-    if skinsFolder then
-        for _, skinModel in ipairs(skinsFolder:GetChildren()) do
-            local standAttr = skinModel:GetAttribute("Stand")
-                           or (skinModel:FindFirstChild("Stand") and skinModel.Stand.Value)
-                           or "Unknown"
-            table.insert(SKIN_LIST, { name = skinModel.Name, stand = standAttr })
-        end
-        table.sort(SKIN_LIST, function(a, b) return a.name < b.name end)
+for _, child in ipairs(standsFolder:GetChildren()) do
+    if child.Name ~= "Skins" then
+        table.insert(STAND_NAMES, child.Name)
     end
 end
+table.sort(STAND_NAMES)
 
---==========================================================
---  SETTINGS  (runtime, editable via GUI)
---==========================================================
+if skinsFolder then
+    for _, model in ipairs(skinsFolder:GetChildren()) do
+        local standName = model:GetAttribute("Stand")
+                       or (model:FindFirstChild("Stand") and model:FindFirstChild("Stand").Value)
+                       or "Unknown"
+        table.insert(SKIN_LIST, { name = model.Name, stand = standName })
+    end
+    table.sort(SKIN_LIST, function(a, b) return a.name < b.name end)
+end
+
+local TRAITS = {
+    "Transcendent","Ruthless","Sadistic","Lucky","Balanced",
+    "Swift","Resilient","Volatile","Cunning","Fierce",
+}
+
+-- ═══════════════════════════════════════════════════════════
+--  SETTINGS
+-- ═══════════════════════════════════════════════════════════
 local Settings = {
-    autorollDelay  = 0.35,     -- seconds between rolls
-    globalStop     = true,     -- stop on Transcendent + All S (global, no condition needed)
-    webhookURL     = "",       -- Discord webhook URL
+    autorollDelay      = 0.35,
+    globalStop         = true,   -- Transcendent + All S
+    webhookURL         = "",
     webhookOnJackpot   = true,
     webhookOnCondition = true,
     webhookOnGlobal    = false,
 }
 
---==========================================================
---  CONDITIONS
---  Each condition = {
---    stand    : string          (stand name)
---    minStr   : "S"|"A"|"B"|"C"|"D"
---    minSpd   : "S"|"A"|"B"|"C"|"D"
---    minSpc   : "S"|"A"|"B"|"C"|"D"
---    skins    : {string}        (any of these skins = stop, independent of stand)
---    traits   : {string}        (if rolled trait is in this list AND stand+stats match = stop)
---  }
---==========================================================
-local Conditions = {}   -- populated via GUI wizard
+-- ═══════════════════════════════════════════════════════════
+--  CONDITIONS  (populated via GUI wizard)
+--  { stands={}, minStr, minSpd, minSpc, skins={}, traits={} }
+-- ═══════════════════════════════════════════════════════════
+local Conditions = {}
 
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 --  HELPERS
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 local GRADE_ORDER = {D=1,C=2,B=3,A=4,S=5}
+local GRADE_NAMES = {"D","C","B","A","S"}
 
 local function numToGrade(n)
-    return ({"D","C","B","A","S"})[math.max(1,math.min(5, tonumber(n) or 1))]
+    return GRADE_NAMES[math.max(1, math.min(5, math.round(tonumber(n) or 1)))]
 end
 
 local function gradeGE(g, minG)
     return (GRADE_ORDER[g] or 0) >= (GRADE_ORDER[minG] or 0)
+end
+
+local function lerpN(a, b, t) return a + (b - a) * t end
+
+local function lerpColor(a, b, t)
+    return Color3.new(
+        a.R + (b.R-a.R)*t,
+        a.G + (b.G-a.G)*t,
+        a.B + (b.B-a.B)*t)
+end
+
+-- HSV cycle helper — same 8s period as HTML version
+local function hsvCycleColor(t)
+    return Color3.fromHSV((t * 0.125) % 1, 0.88, 0.55)
 end
 
 local function parseStand(raw)
@@ -101,141 +114,114 @@ local function parseStand(raw)
     local info = {name="Unknown",skin=nil,trait="Unknown",strength=1,speed=1,specialty=1}
     local ok, t = pcall(HttpService.JSONDecode, HttpService, raw)
     if not ok then
-        local s,e = raw:find("{"), nil
+        local s = raw:find("{")
         if s then
-            local depth=0
-            for i=s,#raw do
-                local c=raw:sub(i,i)
-                if c=="{" then depth+=1 elseif c=="}" then
+            local depth, e = 0, nil
+            for i = s, #raw do
+                local ch = raw:sub(i,i)
+                if ch=="{" then depth+=1 elseif ch=="}" then
                     depth-=1
                     if depth==0 then e=i break end
                 end
             end
-            if e then ok,t = pcall(HttpService.JSONDecode,HttpService,raw:sub(s,e)) end
+            if e then ok,t = pcall(HttpService.JSONDecode, HttpService, raw:sub(s,e)) end
         end
     end
     if ok and type(t)=="table" then
-        if type(t.Name)=="string"  and t.Name~=""  then info.name     = t.Name  end
-        if type(t.Skin)=="string"  and t.Skin~=""  then info.skin     = t.Skin  end
-        if type(t.Trait)=="string" and t.Trait~="" then info.trait    = t.Trait end
-        info.strength  = math.max(1,math.min(5,tonumber(t.Strength)  or 1))
-        info.speed     = math.max(1,math.min(5,tonumber(t.Speed)     or 1))
-        info.specialty = math.max(1,math.min(5,tonumber(t.Specialty) or 1))
+        if type(t.Name)=="string"     and t.Name~=""  then info.name  = t.Name  end
+        if type(t.Skin)=="string"     and t.Skin~=""  then info.skin  = t.Skin  end
+        if type(t.Trait)=="string"    and t.Trait~="" then info.trait = t.Trait end
+        info.strength  = math.max(1,math.min(5, tonumber(t.Strength)  or 1))
+        info.speed     = math.max(1,math.min(5, tonumber(t.Speed)     or 1))
+        info.specialty = math.max(1,math.min(5, tonumber(t.Specialty) or 1))
     end
     return info
 end
 
-local function lerpColor(a, b, t)
-    return Color3.new(a.R+(b.R-a.R)*t, a.G+(b.G-a.G)*t, a.B+(b.B-a.B)*t)
-end
-
-local function hsvCycle(t, s, v)
-    return Color3.fromHSV((t*0.125)%1, s, v)   -- 8-second full cycle
-end
-
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 --  STOP CONDITION CHECKER
---  Returns: reason string or nil
---==========================================================
-local function checkStopConditions(info)
-    local grades = {
+-- ═══════════════════════════════════════════════════════════
+local function checkStop(info)
+    local g = {
         str = numToGrade(info.strength),
         spd = numToGrade(info.speed),
         spc = numToGrade(info.specialty),
     }
-    local allS = grades.str=="S" and grades.spd=="S" and grades.spc=="S"
+    local allS       = g.str=="S" and g.spd=="S" and g.spc=="S"
     local traitLower = info.trait:lower()
 
-    -- Global stop: Transcendent + All S (no condition required)
-    if Settings.globalStop and allS and traitLower == "transcendent" then
+    -- Global: Transcendent + All S
+    if Settings.globalStop and allS and traitLower=="transcendent" then
         return "GLOBAL_JACKPOT"
     end
 
-    -- Per-condition checks
     for _, cond in ipairs(Conditions) do
-        local standMatch  = info.name == cond.stand
-        local statsMatch  = gradeGE(grades.str, cond.minStr)
-                         and gradeGE(grades.spd, cond.minSpd)
-                         and gradeGE(grades.spc, cond.minSpc)
-
-        -- Skin check — independent, any skin in cond.skins stops regardless of stand
-        local skinMatch = false
+        -- Skin check — stand-independent
         if info.skin then
-            for _, s in ipairs(cond.skins) do
+            for _, s in ipairs(cond.skins or {}) do
                 if info.skin:lower():find(s:lower(), 1, true) then
-                    skinMatch = true
-                    break
+                    return allS and "CONDITION_JACKPOT" or "CONDITION_SKIN"
                 end
             end
         end
-        if skinMatch then
-            return allS and "CONDITION_JACKPOT" or "CONDITION_SKIN"
+        -- Stand + stat check
+        local standMatch = false
+        for _, sn in ipairs(cond.stands or {}) do
+            if info.name == sn then standMatch=true break end
         end
-
-        -- Stand + stats + optional trait
-        if standMatch and statsMatch then
-            if #cond.traits > 0 then
+        if standMatch
+           and gradeGE(g.str, cond.minStr)
+           and gradeGE(g.spd, cond.minSpd)
+           and gradeGE(g.spc, cond.minSpc) then
+            if #(cond.traits or {}) > 0 then
                 for _, tr in ipairs(cond.traits) do
-                    if traitLower == tr:lower() then
-                        return "CONDITION_TRAIT"
-                    end
+                    if traitLower==tr:lower() then return "CONDITION_TRAIT" end
                 end
             else
                 return "CONDITION_MET"
             end
         end
     end
-
     return nil
 end
 
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 --  WEBHOOK
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 local function sendWebhook(info, reason)
-    if Settings.webhookURL == "" then return end
-
-    local shouldSend = false
-    if reason == "GLOBAL_JACKPOT" or reason == "CONDITION_JACKPOT" then
-        shouldSend = Settings.webhookOnJackpot
-    elseif reason == "CONDITION_MET" or reason == "CONDITION_SKIN" or reason == "CONDITION_TRAIT" then
-        shouldSend = Settings.webhookOnCondition
+    if Settings.webhookURL=="" then return end
+    local send = false
+    if reason=="GLOBAL_JACKPOT" or reason=="CONDITION_JACKPOT" then
+        send = Settings.webhookOnJackpot
+    elseif reason:find("CONDITION") then
+        send = Settings.webhookOnCondition
     end
-    if not shouldSend then return end
-
-    local grades = {
-        numToGrade(info.strength),
-        numToGrade(info.speed),
-        numToGrade(info.specialty),
-    }
+    if not send then return end
+    local g = {numToGrade(info.strength), numToGrade(info.speed), numToGrade(info.specialty)}
     local body = HttpService:JSONEncode({
         username = "StandRoll HUD",
         embeds = {{
             title = reason:gsub("_"," "),
-            description = string.format(
-                "**%s**%s\nTrait: %s\nSTR `%s`  SPD `%s`  SPC `%s`",
+            description = string.format("**%s**%s\nTrait: %s\nSTR `%s`  SPD `%s`  SPC `%s`",
                 info.name,
                 info.skin and ("  ·  skin: **"..info.skin.."**") or "",
-                info.trait,
-                grades[1], grades[2], grades[3]
-            ),
+                info.trait, g[1], g[2], g[3]),
             color = 0xF0C030,
         }},
     })
-
-    task.spawn(function()
-        pcall(function()
-            HttpService:PostAsync(Settings.webhookURL, body, Enum.HttpContentType.ApplicationJson)
-        end)
-    end)
+    -- HttpService:PostAsync is server-only; fire to server script via RemoteEvent
+    local remote = ReplicatedStorage:FindFirstChild("WebhookProxy")
+    if remote then
+        remote:FireServer(Settings.webhookURL, body)
+    end
 end
 
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 --  AUTOROLL ENGINE
---==========================================================
+-- ═══════════════════════════════════════════════════════════
 local alive          = true
 local autoroll       = false
-local autorollThread = 0
+local rollGen        = 0
 local stopReason     = "IDLE"
 local connections    = {}
 
@@ -248,10 +234,10 @@ local function startAutoroll()
     if autoroll then return end
     autoroll = true
     stopReason = "IDLE"
-    autorollThread += 1
-    local myThread = autorollThread
+    rollGen += 1
+    local gen = rollGen
     task.spawn(function()
-        while alive and autoroll and autorollThread == myThread do
+        while alive and autoroll and rollGen==gen do
             useItem:FireServer("Stand Arrow")
             task.wait(Settings.autorollDelay)
         end
@@ -262,789 +248,1612 @@ local function toggleAutoroll()
     if autoroll then stopAutoroll("MANUAL") else startAutoroll() end
 end
 
---==========================================================
---  KILL
---==========================================================
 local function killScript()
     if not alive then return end
-    alive    = false
-    autoroll = false
-    autorollThread += 1
-    for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
-    table.clear(connections)
+    alive=false; autoroll=false; rollGen+=1
+    for _,c in ipairs(connections) do pcall(function() c:Disconnect() end) end
     local hud = PlayerGui:FindFirstChild("StandRollHUD")
     if hud then hud:Destroy() end
     script:Destroy()
 end
 
---==========================================================
---  GUI CONSTRUCTION
---==========================================================
--- Destroy stale instance
-local existing = PlayerGui:FindFirstChild("StandRollHUD")
-if existing then existing:Destroy() end
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name           = "StandRollHUD"
-screenGui.ResetOnSpawn   = false
-screenGui.IgnoreGuiInset = true
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = PlayerGui
-
-------------------------------------------------------------
+-- ═══════════════════════════════════════════════════════════
 --  THEME
-------------------------------------------------------------
+-- ═══════════════════════════════════════════════════════════
+do local e=PlayerGui:FindFirstChild("StandRollHUD") if e then e:Destroy() end end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name="StandRollHUD"; ScreenGui.ResetOnSpawn=false
+ScreenGui.IgnoreGuiInset=true; ScreenGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent=PlayerGui
+
 local C = {
-    bg        = Color3.fromRGB(17, 17, 22),
-    bgStrip   = Color3.fromRGB(13, 13, 18),
-    border    = Color3.fromRGB(30, 30, 42),
-    divider   = Color3.fromRGB(24, 24, 34),
-    row       = Color3.fromRGB(22, 22, 32),
-    rowBorder = Color3.fromRGB(28, 28, 40),
-    textDim   = Color3.fromRGB(72, 72, 96),
-    textFaint = Color3.fromRGB(37, 37, 56),
-    textLabel = Color3.fromRGB(56, 56, 80),
-    white     = Color3.fromRGB(238, 238, 245),
-    gradeS    = Color3.fromRGB(240, 192, 48),
-    gradeA    = Color3.fromRGB(85,  153, 238),
-    gradeB    = Color3.fromRGB(68,  187, 102),
-    gradeC    = Color3.fromRGB(80,  80,  104),
-    gradeD    = Color3.fromRGB(46,  46,  60),
-    barS      = Color3.fromRGB(200, 160, 40),
-    barA      = Color3.fromRGB(51,  102, 170),
-    barB      = Color3.fromRGB(42,  122, 68),
-    barC      = Color3.fromRGB(54,  54,  80),
-    barD      = Color3.fromRGB(30,  30,  40),
-    red       = Color3.fromRGB(204, 51,  51),
-    redDark   = Color3.fromRGB(20,  8,   8),
-    redBorder = Color3.fromRGB(42,  16,  16),
-    btnBg     = Color3.fromRGB(22,  22,  32),
-    btnBorder = Color3.fromRGB(36,  36,  50),
-    purple    = Color3.fromRGB(144, 85,  204),
-    gold      = Color3.fromRGB(200, 160, 32),
+    bg        = Color3.fromRGB(17,17,22),
+    bgStrip   = Color3.fromRGB(13,13,18),
+    border    = Color3.fromRGB(50,50,72),
+    divider   = Color3.fromRGB(24,24,34),
+    textDim   = Color3.fromRGB(72,72,96),
+    textFaint = Color3.fromRGB(37,37,56),
+    textMuted = Color3.fromRGB(48,48,64),
+    white     = Color3.fromRGB(238,238,245),
+    gradeS    = Color3.fromRGB(240,192,48),
+    gradeA    = Color3.fromRGB(85,153,238),
+    gradeB    = Color3.fromRGB(68,187,102),
+    gradeC    = Color3.fromRGB(80,80,104),
+    gradeD    = Color3.fromRGB(46,46,60),
+    barS      = Color3.fromRGB(200,160,40),
+    barA      = Color3.fromRGB(51,102,170),
+    barB      = Color3.fromRGB(42,122,68),
+    barC      = Color3.fromRGB(54,54,80),
+    barD      = Color3.fromRGB(30,30,40),
+    red       = Color3.fromRGB(204,51,51),
+    redDark   = Color3.fromRGB(20,8,8),
+    redBorder = Color3.fromRGB(42,16,16),
+    btnBg     = Color3.fromRGB(22,22,32),
+    btnBorder = Color3.fromRGB(36,36,50),
+    purple    = Color3.fromRGB(144,85,204),
+    gold      = Color3.fromRGB(200,160,32),
+    rowBg     = Color3.fromRGB(22,22,32),
+    rowBorder = Color3.fromRGB(28,28,40),
+    green     = Color3.fromRGB(61,204,85),
 }
 
-local function gradeColor(g)
-    return ({S=C.gradeS,A=C.gradeA,B=C.gradeB,C=C.gradeC,D=C.gradeD})[g] or C.gradeD
-end
-local function barColor(g)
-    return ({S=C.barS,A=C.barA,B=C.barB,C=C.barC,D=C.barD})[g] or C.barD
-end
+local function gc(g) return C["grade"..g] or C.gradeD end
+local function bc(g) return C["bar"..g]   or C.barD   end
 
-------------------------------------------------------------
---  FACTORY HELPERS
-------------------------------------------------------------
-local function frame(props)
+-- ═══════════════════════════════════════════════════════════
+--  INSTANCE FACTORY
+-- ═══════════════════════════════════════════════════════════
+local function newFrame(parent, p)
     local f = Instance.new("Frame")
-    for k,v in pairs(props) do f[k]=v end
-    return f
+    f.BackgroundColor3       = p.BackgroundColor3       or Color3.fromRGB(0,0,0)
+    f.BackgroundTransparency = p.BackgroundTransparency or 0
+    f.BorderSizePixel        = 0
+    f.Size                   = p.Size     or UDim2.new(0,10,0,10)
+    f.Position               = p.Position or UDim2.new(0,0,0,0)
+    f.AnchorPoint            = p.AnchorPoint or Vector2.new(0,0)
+    f.ZIndex                 = p.ZIndex   or 1
+    f.Visible                = p.Visible  ~= nil and p.Visible or true
+    if p.Name then f.Name=p.Name end
+    f.Parent=parent; return f
 end
 
-local function label(props)
+local function newLabel(parent, p)
     local l = Instance.new("TextLabel")
     l.BackgroundTransparency = 1
-    for k,v in pairs(props) do l[k]=v end
-    return l
+    l.BorderSizePixel        = 0
+    l.Size           = p.Size           or UDim2.new(0,100,0,20)
+    l.Position       = p.Position       or UDim2.new(0,0,0,0)
+    l.AnchorPoint    = p.AnchorPoint    or Vector2.new(0,0)
+    l.ZIndex         = p.ZIndex         or 1
+    l.Font           = p.Font           or Enum.Font.Gotham
+    l.TextSize       = p.TextSize       or 14
+    l.TextColor3     = p.TextColor3     or Color3.fromRGB(255,255,255)
+    l.TextXAlignment = p.TextXAlignment or Enum.TextXAlignment.Left
+    l.TextYAlignment = p.TextYAlignment or Enum.TextYAlignment.Center
+    l.Text           = p.Text           or ""
+    if p.Name then l.Name=p.Name end
+    l.Parent=parent; return l
 end
 
-local function button(props)
+local function newButton(parent, p)
     local b = Instance.new("TextButton")
-    for k,v in pairs(props) do b[k]=v end
-    return b
+    b.BackgroundColor3       = p.BackgroundColor3       or C.btnBg
+    b.BackgroundTransparency = p.BackgroundTransparency or 0
+    b.BorderSizePixel        = 0
+    b.Size           = p.Size           or UDim2.new(0,100,0,30)
+    b.Position       = p.Position       or UDim2.new(0,0,0,0)
+    b.AnchorPoint    = p.AnchorPoint    or Vector2.new(0,0)
+    b.ZIndex         = p.ZIndex         or 1
+    b.Font           = p.Font           or Enum.Font.GothamBold
+    b.TextSize       = p.TextSize       or 12
+    b.TextColor3     = p.TextColor3     or C.textDim
+    b.Text           = p.Text           or ""
+    b.AutoButtonColor= false
+    if p.Name then b.Name=p.Name end
+    b.Parent=parent; return b
 end
 
-local function corner(r, parent)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r)
-    c.Parent = parent
-    return c
+local function addCorner(parent, r)
+    local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,r); c.Parent=parent; return c
 end
 
-local function stroke(thickness, color, parent)
-    local s = Instance.new("UIStroke")
-    s.Thickness = thickness
-    s.Color = color
-    s.Parent = parent
-    return s
+local function addStroke(parent, thickness, color)
+    local s=Instance.new("UIStroke"); s.Thickness=thickness; s.Color=color; s.Parent=parent; return s
 end
 
-local function makeDraggable(dragFrame, targetFrame)
-    dragFrame.Active = true
-    local dragging, dragStart, startPos
-    dragFrame.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            dragging  = true
-            dragStart = inp.Position
-            startPos  = targetFrame.Position
-            inp.Changed:Connect(function()
-                if inp.UserInputState == Enum.UserInputState.End then dragging=false end
-            end)
+local function addPadding(parent, px)
+    local p=Instance.new("UIPadding")
+    p.PaddingLeft=UDim.new(0,px); p.PaddingRight=UDim.new(0,px)
+    p.PaddingTop=UDim.new(0,px);  p.PaddingBottom=UDim.new(0,px)
+    p.Parent=parent; return p
+end
+
+local function addListLayout(parent, spacing, direction)
+    local l=Instance.new("UIListLayout")
+    l.Padding=UDim.new(0, spacing or 4)
+    l.FillDirection=direction or Enum.FillDirection.Vertical
+    l.SortOrder=Enum.SortOrder.LayoutOrder
+    l.Parent=parent; return l
+end
+
+-- ═══════════════════════════════════════════════════════════
+--  DRAG  (clean, no .Active)
+-- ═══════════════════════════════════════════════════════════
+local function makeDraggable(handle, target)
+    local dragging, startMouse, startPos
+    handle.InputBegan:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1
+        or inp.UserInputType==Enum.UserInputType.Touch then
+            dragging=true; startMouse=inp.Position; startPos=target.Position
         end
     end)
-    local dragInput
-    dragFrame.InputChanged:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseMovement
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            dragInput = inp
+    handle.InputEnded:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1
+        or inp.UserInputType==Enum.UserInputType.Touch then
+            dragging=false
         end
     end)
-    UserInputService.InputChanged:Connect(function(inp)
-        if inp == dragInput and dragging then
-            local d = inp.Position - dragStart
-            targetFrame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + d.X,
-                startPos.Y.Scale, startPos.Y.Offset + d.Y)
-        end
-    end)
+    -- Track in connections so killScript disconnects it properly
+    table.insert(connections, UserInputService.InputChanged:Connect(function(inp)
+        if not dragging then return end
+        if inp.UserInputType~=Enum.UserInputType.MouseMovement
+        and inp.UserInputType~=Enum.UserInputType.Touch then return end
+        local d=inp.Position-startMouse
+        target.Position=UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X,
+                                   startPos.Y.Scale, startPos.Y.Offset+d.Y)
+    end))
 end
 
-------------------------------------------------------------
---  MAIN HUD  (card + strip, side by side in a holder)
-------------------------------------------------------------
-local hudHolder = frame{
-    Name             = "HUDHolder",
-    BackgroundTransparency = 1,
-    AnchorPoint      = Vector2.new(1, 0.5),
-    Position         = UDim2.new(1, -20, 0.5, 0),
-    Size             = UDim2.new(0, 362, 0, 200),  -- resized after card built
-    ZIndex           = 10,
-    Parent           = screenGui,
-}
+-- ═══════════════════════════════════════════════════════════
+--  MAIN HUD
+-- ═══════════════════════════════════════════════════════════
+local PAD=18; local CARD_W=320; local STRIP_W=0
 
--- ── CARD ──────────────────────────────────────
-local CARD_W, CARD_H = 320, 200   -- height set after content
+local hudHolder=newFrame(ScreenGui,{
+    Name="HUDHolder", BackgroundTransparency=1,
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,20,0.5,0),
+    Size=UDim2.new(0,CARD_W+STRIP_W,0,10),
+    ZIndex=10,
+})
 
-local cardFrame = frame{
-    Name             = "Card",
-    BackgroundColor3 = C.bg,
-    BorderSizePixel  = 0,
-    Position         = UDim2.new(0,0,0,0),
-    Size             = UDim2.new(0, CARD_W, 1, 0),
-    ZIndex           = 10,
-    Parent           = hudHolder,
-}
-corner(18, cardFrame)
-local cardStroke = stroke(1.5, C.border, cardFrame)
+-- ── CARD ─────────────────────────────────────────────────────
+local cardFrame=newFrame(hudHolder,{
+    Name="Card", BackgroundColor3=C.bg,
+    Position=UDim2.new(0,0,0,0),
+    Size=UDim2.new(0,CARD_W,1,0), ZIndex=10,
+})
+addCorner(cardFrame,18)
+local cardStroke=addStroke(cardFrame,1.5,C.border)
 
--- invisible drag handle across top of card
-local dragHandle = frame{
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Position         = UDim2.new(0,0,0,0),
-    Size             = UDim2.new(0, CARD_W, 0, 28),
-    ZIndex           = 30,
-    Parent           = cardFrame,
-}
-makeDraggable(dragHandle, hudHolder)
+local dragBar=newFrame(cardFrame,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,0,0,0),
+    Size=UDim2.new(0,CARD_W,0,26), ZIndex=30,
+})
+makeDraggable(dragBar,hudHolder)
 
--- ── CARD CONTENT ──────────────────────────────
-local PAD = 18
-local yOff = 26   -- padding-top (room for drag handle)
+-- content
+local yOff=26
 
--- Stand name
-local nameLabel = label{
-    Position         = UDim2.new(0,PAD,0,yOff),
-    Size             = UDim2.new(1,-PAD*2-80,0,28),
-    Font             = Enum.Font.GothamBlack,
-    TextSize         = 21,
-    TextColor3       = C.white,
-    TextXAlignment   = Enum.TextXAlignment.Left,
-    TextTruncate     = Enum.TextTruncate.AtEnd,
-    Text             = "—",
-    ZIndex           = 12,
-    Parent           = cardFrame,
-}
+local nameLabel=newLabel(cardFrame,{
+    Position=UDim2.new(0,PAD,0,yOff),
+    Size=UDim2.new(1,-PAD*2-84,0,28),
+    Font=Enum.Font.GothamBlack, TextSize=21,
+    TextColor3=C.white, TextXAlignment=Enum.TextXAlignment.Left,
+    Text="—", ZIndex=12,
+})
 
--- Skin pill
-local skinPill = frame{
-    AnchorPoint      = Vector2.new(1, 0),
-    Position         = UDim2.new(1, -PAD, 0, yOff+3),
-    Size             = UDim2.new(0, 80, 0, 20),
-    BackgroundColor3 = Color3.fromRGB(42, 28, 4),
-    BorderSizePixel  = 0,
-    Visible          = false,
-    ZIndex           = 13,
-    Parent           = cardFrame,
-}
-corner(100, skinPill)
-local skinPillStroke = stroke(1, Color3.fromRGB(200, 134, 10), skinPill)
-local skinPillLabel = label{
-    Size             = UDim2.new(1,-16,1,0),
-    Position         = UDim2.new(0,8,0,0),
-    Font             = Enum.Font.GothamBold,
-    TextSize         = 10,
-    TextColor3       = Color3.fromRGB(196, 136, 32),
-    Text             = "",
-    ZIndex           = 14,
-    Parent           = skinPill,
-}
+local skinPill=newFrame(cardFrame,{
+    AnchorPoint=Vector2.new(1,0),
+    Position=UDim2.new(1,-PAD,0,yOff+4),
+    Size=UDim2.new(0,80,0,20),
+    BackgroundColor3=Color3.fromRGB(42,28,4),
+    Visible=false, ZIndex=13,
+})
+addCorner(skinPill,100)
+local skinPillStroke=addStroke(skinPill,1,Color3.fromRGB(200,134,10))
+local skinPillLabel=newLabel(skinPill,{
+    Position=UDim2.new(0,8,0,0), Size=UDim2.new(1,-16,1,0),
+    Font=Enum.Font.GothamBold, TextSize=10,
+    TextColor3=Color3.fromRGB(196,136,32), Text="", ZIndex=14,
+})
 
-yOff += 32
+yOff+=34
+newLabel(cardFrame,{
+    Position=UDim2.new(0,PAD,0,yOff), Size=UDim2.new(0,38,0,14),
+    Font=Enum.Font.GothamBold, TextSize=9, TextColor3=C.textFaint, Text="TRAIT", ZIndex=12,
+})
+local traitValLabel=newLabel(cardFrame,{
+    Position=UDim2.new(0,PAD+42,0,yOff), Size=UDim2.new(1,-PAD*2-42-90,0,14),
+    Font=Enum.Font.Gotham, TextSize=12, TextColor3=C.textDim,
+    TextXAlignment=Enum.TextXAlignment.Left, Text="—", ZIndex=12,
+})
+-- Status label: right side of trait row
+local statusLabel=newLabel(cardFrame,{
+    AnchorPoint=Vector2.new(1,0),
+    Position=UDim2.new(1,-PAD,0,yOff), Size=UDim2.new(0,84,0,14),
+    Font=Enum.Font.GothamSemibold, TextSize=11,
+    TextColor3=C.textFaint, TextXAlignment=Enum.TextXAlignment.Right,
+    Text="IDLE", ZIndex=12,
+})
 
--- Trait row
-local traitCapLabel = label{
-    Position         = UDim2.new(0,PAD,0,yOff),
-    Size             = UDim2.new(0,36,0,14),
-    Font             = Enum.Font.GothamBold,
-    TextSize         = 9,
-    TextColor3       = C.textFaint,
-    Text             = "TRAIT",
-    ZIndex           = 12,
-    Parent           = cardFrame,
-}
-local traitValLabel = label{
-    Position         = UDim2.new(0,PAD+40,0,yOff),
-    Size             = UDim2.new(1,-PAD*2-40,0,14),
-    Font             = Enum.Font.Gotham,
-    TextSize         = 12,
-    TextColor3       = C.textDim,
-    TextXAlignment   = Enum.TextXAlignment.Left,
-    Text             = "—",
-    ZIndex           = 12,
-    Parent           = cardFrame,
-}
+yOff+=22
 
-yOff += 22
-
--- Stat rows: STR / SPD / SPC
-local statObjects = {}
-local GRADE_NAMES_LIST = {"STR","SPD","SPC"}
-
-for i, statName in ipairs(GRADE_NAMES_LIST) do
-    local rowY = yOff + (i-1)*22
-
-    local lbl = label{
-        Position     = UDim2.new(0,PAD,0,rowY),
-        Size         = UDim2.new(0,24,0,18),
-        Font         = Enum.Font.GothamBold,
-        TextSize     = 9,
-        TextColor3   = C.textFaint,
-        Text         = statName,
-        ZIndex       = 12,
-        Parent       = cardFrame,
-    }
-
-    local barBg = frame{
-        Position     = UDim2.new(0,PAD+28,0,rowY+7),
-        Size         = UDim2.new(1,-PAD*2-28-28,0,2),
-        BackgroundColor3 = Color3.fromRGB(24,24,38),
-        BorderSizePixel  = 0,
-        ZIndex       = 12,
-        Parent       = cardFrame,
-    }
-    corner(100, barBg)
-
-    local barFill = frame{
-        Size         = UDim2.new(1,0,1,0),
-        BackgroundColor3 = C.barD,
-        BorderSizePixel  = 0,
-        ZIndex       = 13,
-        Parent       = barBg,
-    }
-    corner(100, barFill)
-
-    local gradeLbl = label{
-        AnchorPoint  = Vector2.new(1,0),
-        Position     = UDim2.new(1,-PAD,0,rowY-1),
-        Size         = UDim2.new(0,20,0,20),
-        Font         = Enum.Font.Code,
-        TextSize     = 17,
-        TextColor3   = C.gradeD,
-        Text         = "D",
-        ZIndex       = 12,
-        Parent       = cardFrame,
-    }
-
-    statObjects[i] = { bar=barFill, gradeLbl=gradeLbl, lbl=lbl }
+-- Stat rows
+local statObjects={}
+for i, statName in ipairs({"STR","SPD","SPC"}) do
+    local rowY=yOff+(i-1)*22
+    newLabel(cardFrame,{
+        Position=UDim2.new(0,PAD,0,rowY), Size=UDim2.new(0,24,0,18),
+        Font=Enum.Font.GothamBold, TextSize=9, TextColor3=C.textFaint,
+        Text=statName, ZIndex=12,
+    })
+    local barBg=newFrame(cardFrame,{
+        BackgroundColor3=Color3.fromRGB(24,24,38),
+        Position=UDim2.new(0,PAD+28,0,rowY+8),
+        Size=UDim2.new(1,-PAD*2-28-26,0,2), ZIndex=12,
+    })
+    addCorner(barBg,100)
+    local barFill=newFrame(barBg,{
+        BackgroundColor3=C.barD,
+        Size=UDim2.new(0.2,0,1,0), ZIndex=13,
+    })
+    addCorner(barFill,100)
+    local gradeLbl=newLabel(cardFrame,{
+        AnchorPoint=Vector2.new(1,0),
+        Position=UDim2.new(1,-PAD,0,rowY-1),
+        Size=UDim2.new(0,20,0,20),
+        Font=Enum.Font.Code, TextSize=17,
+        TextColor3=C.gradeD, TextXAlignment=Enum.TextXAlignment.Right,
+        Text="D", ZIndex=12,
+    })
+    statObjects[i]={bar=barFill, gradeLbl=gradeLbl}
 end
 
-yOff += 3 * 22 + 6
+yOff+=3*22+6
 
--- Divider
-local divider = frame{
-    Position     = UDim2.new(0,PAD,0,yOff),
-    Size         = UDim2.new(1,-PAD*2,0,1),
-    BackgroundColor3 = C.divider,
-    BorderSizePixel  = 0,
-    ZIndex       = 12,
-    Parent       = cardFrame,
-}
+newFrame(cardFrame,{
+    BackgroundColor3=C.divider,
+    Position=UDim2.new(0,PAD,0,yOff),
+    Size=UDim2.new(1,-PAD*2,0,1), ZIndex=12,
+})
+yOff+=12
 
-yOff += 12
+-- Bottom row: [AUTO OFF] [⚙] [◉] [📁]  →→→  [✕]  |  status right-aligned
+-- Bottom row: [AUTO] [⚙] [◉] [📁]  ···  [X]
+local autoBtn=newButton(cardFrame,{
+    Position=UDim2.new(0,PAD,0,yOff), Size=UDim2.new(0,76,0,28),
+    BackgroundColor3=C.btnBg, Font=Enum.Font.GothamBold,
+    TextSize=11, TextColor3=C.textDim, Text="AUTO OFF", ZIndex=13,
+})
+addCorner(autoBtn,8)
+local autoBtnStroke=addStroke(autoBtn,1.5,C.btnBorder)
 
--- Bottom bar
-local autoBtn = button{
-    Position         = UDim2.new(0,PAD,0,yOff),
-    Size             = UDim2.new(0,120,0,30),
-    BackgroundColor3 = C.btnBg,
-    BorderSizePixel  = 0,
-    Font             = Enum.Font.GothamBold,
-    TextSize         = 11,
-    TextColor3       = C.textDim,
-    Text             = "AUTO  OFF",
-    ZIndex           = 13,
-    Parent           = cardFrame,
-}
-corner(8, autoBtn)
-local autoBtnStroke = stroke(1.5, C.btnBorder, autoBtn)
+local function makeInlineTabBtn(icon, xPos)
+    local b=newButton(cardFrame,{
+        Position=UDim2.new(0,xPos,0,yOff), Size=UDim2.new(0,28,0,28),
+        BackgroundColor3=C.btnBg,
+        Font=Enum.Font.Gotham, TextSize=14,
+        TextColor3=C.textDim, Text=icon, ZIndex=13,
+    })
+    addCorner(b,8); addStroke(b,1.5,C.btnBorder); return b
+end
 
-local killBtn = button{
-    Position         = UDim2.new(0,PAD+126,0,yOff),
-    Size             = UDim2.new(0,30,0,30),
-    BackgroundColor3 = C.redDark,
-    BorderSizePixel  = 0,
-    Font             = Enum.Font.GothamBold,
-    TextSize         = 13,
-    TextColor3       = Color3.fromRGB(90,32,32),
-    Text             = "✕",
-    ZIndex           = 13,
-    Parent           = cardFrame,
-}
-corner(8, killBtn)
-stroke(1.5, C.redBorder, killBtn)
+local settingsTabBtn = makeInlineTabBtn("⚙", PAD+82)
+local webhookTabBtn  = makeInlineTabBtn("◉", PAD+116)
+local configTabBtn   = makeInlineTabBtn("📁", PAD+150)
 
-local statusLabel = label{
-    AnchorPoint      = Vector2.new(1,0),
-    Position         = UDim2.new(1,-PAD,0,yOff+3),
-    Size             = UDim2.new(0,100,0,14),
-    Font             = Enum.Font.GothamSemibold,
-    TextSize         = 11,
-    TextColor3       = C.textFaint,
-    TextXAlignment   = Enum.TextXAlignment.Right,
-    Text             = "IDLE",
-    ZIndex           = 13,
-    Parent           = cardFrame,
-}
-local hintLabel = label{
-    AnchorPoint      = Vector2.new(1,0),
-    Position         = UDim2.new(1,-PAD,0,yOff+18),
-    Size             = UDim2.new(0,100,0,11),
-    Font             = Enum.Font.Gotham,
-    TextSize         = 9,
-    TextColor3       = Color3.fromRGB(26,26,40),
-    TextXAlignment   = Enum.TextXAlignment.Right,
-    Text             = "Y  kill script",
-    ZIndex           = 13,
-    Parent           = cardFrame,
-}
+-- Kill button — far right, plain "X" (unicode ✕ renders as box on some fonts)
+local killBtn=newButton(cardFrame,{
+    AnchorPoint=Vector2.new(1,0),
+    Position=UDim2.new(1,-PAD,0,yOff), Size=UDim2.new(0,28,0,28),
+    BackgroundColor3=C.redDark, Font=Enum.Font.GothamBold,
+    TextSize=12, TextColor3=Color3.fromRGB(140,40,40), Text="X", ZIndex=13,
+})
+addCorner(killBtn,8); addStroke(killBtn,1.5,C.redBorder)
 
-yOff += 44
+yOff+=38
 
--- Resize card and holder to fit content
-CARD_H = yOff
-cardFrame.Size   = UDim2.new(0, CARD_W, 0, CARD_H)
-hudHolder.Size   = UDim2.new(0, CARD_W + 42, 0, CARD_H)
+local CARD_H=yOff
+cardFrame.Size=UDim2.new(0,CARD_W,0,CARD_H)
+hudHolder.Size=UDim2.new(0,CARD_W,0,CARD_H)
 
--- ── TAB STRIP ─────────────────────────────────
-local tabStrip = frame{
-    Name             = "TabStrip",
-    BackgroundColor3 = C.bgStrip,
-    BorderSizePixel  = 0,
-    Position         = UDim2.new(0, CARD_W, 0, 0),
-    Size             = UDim2.new(0, 42, 1, 0),
-    ZIndex           = 10,
-    Parent           = hudHolder,
-}
-corner(18, tabStrip)
--- The strip shares the same stroke reference as the card (set via glow system)
-local stripStroke = stroke(1.5, C.border, tabStrip)
+-- ═══════════════════════════════════════════════════════════
+--  HELPER: make a sub-window frame with title bar
+-- ═══════════════════════════════════════════════════════════
+local function makeSubWin(name, w, h)
+    local win=newFrame(ScreenGui,{
+        Name=name, BackgroundColor3=C.bg,
+        Position=UDim2.new(0,0,0,0),
+        Size=UDim2.new(0,w,0,h),
+        Visible=false, ZIndex=20,
+    })
+    addCorner(win,16)
+    local stroke=addStroke(win,1.5,C.border)
 
-makeDraggable(tabStrip, hudHolder)
+    local titleBar=newFrame(win,{
+        BackgroundTransparency=1,
+        Size=UDim2.new(1,0,0,36), ZIndex=21,
+    })
+    makeDraggable(titleBar,win)
 
--- Strip tab buttons
-local function makeTabBtn(iconText, yPos)
-    local btn = button{
-        AnchorPoint      = Vector2.new(0.5, 0),
-        Position         = UDim2.new(0.5, 0, 0, yPos),
-        Size             = UDim2.new(0, 30, 0, 30),
-        BackgroundColor3 = Color3.fromRGB(0,0,0),
-        BackgroundTransparency = 1,
-        BorderSizePixel  = 0,
-        Font             = Enum.Font.Gotham,
-        TextSize         = 14,
-        TextColor3       = Color3.fromRGB(56,56,80),
-        Text             = iconText,
-        ZIndex           = 12,
-        Parent           = tabStrip,
+    newLabel(titleBar,{
+        Position=UDim2.new(0,14,0,0), Size=UDim2.new(1,-34,1,0),
+        Font=Enum.Font.GothamBold, TextSize=10,
+        TextColor3=C.textFaint, TextXAlignment=Enum.TextXAlignment.Left,
+        Text=name:upper(), ZIndex=22,
+    })
+
+    local closeBtn=newButton(titleBar,{
+        AnchorPoint=Vector2.new(1,0.5),
+        Position=UDim2.new(1,-10,0.5,0),
+        Size=UDim2.new(0,20,0,20),
+        BackgroundTransparency=1,
+        Font=Enum.Font.GothamBold, TextSize=12,
+        TextColor3=Color3.fromRGB(51,51,72),
+        Text="x", ZIndex=22,
+    })
+
+    -- divider under title
+    newFrame(win,{
+        BackgroundColor3=C.divider,
+        Position=UDim2.new(0,0,0,36),
+        Size=UDim2.new(1,0,0,1), ZIndex=21,
+    })
+
+    return win, stroke, closeBtn
+end
+
+-- ── SETTINGS WINDOW ──────────────────────────────────────────
+local settingsWin, settingsStroke, settingsCloseBtn = makeSubWin("Settings",290,320)
+
+-- scrollable body
+local settingsBody=newFrame(settingsWin,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,0,0,37),
+    Size=UDim2.new(1,0,1,-37), ZIndex=21,
+    Name="Body",
+})
+local settingsScroll=Instance.new("ScrollingFrame")
+settingsScroll.BackgroundTransparency=1
+settingsScroll.BorderSizePixel=0
+settingsScroll.Position=UDim2.new(0,0,0,0)
+settingsScroll.Size=UDim2.new(1,0,1,0)
+settingsScroll.CanvasSize=UDim2.new(0,0,0,0)
+settingsScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+settingsScroll.ScrollBarThickness=3
+settingsScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
+settingsScroll.ZIndex=22
+settingsScroll.Parent=settingsBody
+do
+    local p=Instance.new("UIPadding")
+    p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
+    p.PaddingTop=UDim.new(0,10);  p.PaddingBottom=UDim.new(0,10)
+    p.Parent=settingsScroll
+end
+addListLayout(settingsScroll,6)
+
+-- ── helper: section label ──
+local function sectionLabel(parent, text, order)
+    local l=newLabel(parent,{
+        Size=UDim2.new(1,0,0,16),
+        Font=Enum.Font.GothamBold, TextSize=9,
+        TextColor3=C.textFaint, Text=text, ZIndex=23,
+    })
+    l.LayoutOrder=order or 0; return l
+end
+
+-- ── helper: toggle row ──
+local function makeToggleRow(parent, labelText, initOn, order)
+    local row=newFrame(parent,{
+        BackgroundColor3=C.rowBg,
+        Size=UDim2.new(1,0,0,32), ZIndex=23,
+    })
+    addCorner(row,7)
+    addStroke(row,1,C.rowBorder)
+    row.LayoutOrder=order or 0
+
+    newLabel(row,{
+        Position=UDim2.new(0,10,0,0), Size=UDim2.new(1,-50,1,0),
+        Font=Enum.Font.GothamSemibold, TextSize=11,
+        TextColor3=C.textDim, Text=labelText, ZIndex=24,
+    })
+
+    local toggleBg=newFrame(row,{
+        AnchorPoint=Vector2.new(1,0.5),
+        Position=UDim2.new(1,-10,0.5,0),
+        Size=UDim2.new(0,26,0,15),
+        BackgroundColor3=initOn and Color3.fromRGB(12,42,24) or Color3.fromRGB(20,20,34),
+        ZIndex=24,
+    })
+    addCorner(toggleBg,100)
+    addStroke(toggleBg,1,initOn and Color3.fromRGB(26,74,40) or Color3.fromRGB(34,34,56))
+    local toggleKnob=newFrame(toggleBg,{
+        BackgroundColor3=initOn and C.green or Color3.fromRGB(42,42,64),
+        Position=initOn and UDim2.new(0,13,0.5,-4) or UDim2.new(0,2,0.5,-4),
+        Size=UDim2.new(0,9,0,9), ZIndex=25,
+    })
+    addCorner(toggleKnob,100)
+
+    local on=initOn
+    local function setState(v)
+        on=v
+        TweenService:Create(toggleKnob,TweenInfo.new(0.18),{
+            Position=on and UDim2.new(0,13,0.5,-4) or UDim2.new(0,2,0.5,-4),
+            BackgroundColor3=on and C.green or Color3.fromRGB(42,42,64),
+        }):Play()
+        toggleBg.BackgroundColor3=on and Color3.fromRGB(12,42,24) or Color3.fromRGB(20,20,34)
+    end
+
+    local btn=newButton(row,{
+        BackgroundTransparency=1, Size=UDim2.new(1,0,1,0),
+        Text="", ZIndex=26,
+    })
+    btn.MouseButton1Click:Connect(function() setState(not on) end)
+
+    return row, function() return on end, setState
+end
+
+-- CONDITIONS section
+sectionLabel(settingsScroll,"CONDITIONS",1)
+
+-- conditions dropdown header
+local condHeaderRow=newFrame(settingsScroll,{
+    BackgroundColor3=C.rowBg,
+    Size=UDim2.new(1,0,0,34), ZIndex=23,
+})
+addCorner(condHeaderRow,7)
+addStroke(condHeaderRow,1,C.rowBorder)
+condHeaderRow.LayoutOrder=2
+
+local condHeaderLbl=newLabel(condHeaderRow,{
+    Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
+    Font=Enum.Font.GothamSemibold, TextSize=11,
+    TextColor3=C.textDim, Text="Player Conditions", ZIndex=24,
+})
+local condCountLbl=newLabel(condHeaderRow,{
+    AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-30,0.5,0), Size=UDim2.new(0,80,0,14),
+    Font=Enum.Font.Code, TextSize=10,
+    TextColor3=C.textMuted, TextXAlignment=Enum.TextXAlignment.Right,
+    Text="0 active", ZIndex=24,
+})
+local condChevBtn=newButton(condHeaderRow,{
+    AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-8,0.5,0), Size=UDim2.new(0,18,0,18),
+    BackgroundTransparency=1, Font=Enum.Font.GothamBold,
+    TextSize=9, TextColor3=C.textMuted, Text="\xe2\x96\xbc", ZIndex=25,
+})
+
+-- conditions list container (shown/hidden)
+local condListContainer=newFrame(settingsScroll,{
+    BackgroundTransparency=1,
+    Size=UDim2.new(1,0,0,0),
+    ZIndex=23, Visible=false,
+    Name="CondList",
+})
+condListContainer.AutomaticSize=Enum.AutomaticSize.Y
+condListContainer.LayoutOrder=3
+addListLayout(condListContainer,3)
+
+-- Add condition button
+local addCondBtn=newButton(settingsScroll,{
+    BackgroundColor3=Color3.fromRGB(17,17,32),
+    Size=UDim2.new(1,0,0,32), ZIndex=23,
+    Font=Enum.Font.GothamSemibold, TextSize=11,
+    TextColor3=C.textMuted, Text="+ Add Condition",
+})
+addCondBtn.LayoutOrder=4
+addCorner(addCondBtn,7)
+addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
+
+-- GLOBAL STOP
+sectionLabel(settingsScroll,"GLOBAL STOP",5)
+local globalStopRow,getGlobalStop,setGlobalStop=makeToggleRow(settingsScroll,"Transcendent + All S",true,6)
+
+-- ROLL
+sectionLabel(settingsScroll,"ROLL",7)
+local delayRow=newFrame(settingsScroll,{
+    BackgroundColor3=C.rowBg,
+    Size=UDim2.new(1,0,0,32), ZIndex=23,
+})
+addCorner(delayRow,7)
+addStroke(delayRow,1,C.rowBorder)
+delayRow.LayoutOrder=8
+newLabel(delayRow,{
+    Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
+    Font=Enum.Font.GothamSemibold, TextSize=11,
+    TextColor3=C.textDim, Text="Delay (s)", ZIndex=24,
+})
+local delayVal=newLabel(delayRow,{
+    AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.35,0,1,0),
+    Font=Enum.Font.Code, TextSize=11,
+    TextColor3=C.textMuted, TextXAlignment=Enum.TextXAlignment.Right,
+    Text="0.35", ZIndex=24,
+})
+
+-- ── WEBHOOK WINDOW ───────────────────────────────────────────
+local webhookWin, webhookStroke, webhookCloseBtn = makeSubWin("Webhook",290,340)
+
+local wBody=newFrame(webhookWin,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,0,0,37),
+    Size=UDim2.new(1,0,1,-37), ZIndex=21,
+})
+do
+    local p=Instance.new("UIPadding")
+    p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
+    p.PaddingTop=UDim.new(0,10);  p.PaddingBottom=UDim.new(0,10)
+    p.Parent=wBody
+end
+addListLayout(wBody,6)
+
+sectionLabel(wBody,"DISCORD WEBHOOK URL",1)
+
+local urlBox=Instance.new("TextBox")
+urlBox.BackgroundColor3=Color3.fromRGB(20,20,32)
+urlBox.BorderSizePixel=0
+urlBox.Size=UDim2.new(1,0,0,32)
+urlBox.Font=Enum.Font.Code; urlBox.TextSize=10
+urlBox.TextColor3=Color3.fromRGB(85,85,170)
+urlBox.PlaceholderText="https://discord.com/api/webhooks/..."
+urlBox.PlaceholderColor3=Color3.fromRGB(30,30,46)
+urlBox.Text=""; urlBox.ClearTextOnFocus=false
+urlBox.TextXAlignment=Enum.TextXAlignment.Left
+urlBox.LayoutOrder=2; urlBox.ZIndex=23; urlBox.Parent=wBody
+addCorner(urlBox,7); addStroke(urlBox,1,Color3.fromRGB(28,28,44))
+addPadding(urlBox,8)
+
+local testBtn=newButton(wBody,{
+    BackgroundColor3=Color3.fromRGB(18,18,32),
+    Size=UDim2.new(1,0,0,32), ZIndex=23,
+    Font=Enum.Font.GothamBold, TextSize=11,
+    TextColor3=C.textMuted, Text="Test Webhook",
+})
+testBtn.LayoutOrder=3
+addCorner(testBtn,7); addStroke(testBtn,1.5,Color3.fromRGB(30,30,56))
+
+sectionLabel(wBody,"NOTIFY ON",4)
+local _,getWHJackpot  = makeToggleRow(wBody,"Jackpot",true,5)
+local _,getWHCond     = makeToggleRow(wBody,"Condition Met",true,6)
+local _,getWHGlobal   = makeToggleRow(wBody,"Global Stop",false,7)
+
+-- sync settings from toggles each frame
+table.insert(connections, RunService.Heartbeat:Connect(function()
+    Settings.globalStop         = getGlobalStop()
+    Settings.webhookURL         = urlBox.Text
+    Settings.webhookOnJackpot   = getWHJackpot()
+    Settings.webhookOnCondition = getWHCond()
+    Settings.webhookOnGlobal    = getWHGlobal()
+end))
+
+-- ═══════════════════════════════════════════════════════════
+--  CONFIG WINDOW  (save / load / autoload named configs)
+--  Configs stored as JSON in a StringValue under PlayerData
+--  so they persist across sessions via server-side DataStore
+--  (or fall back to in-memory if DataStore unavailable)
+-- ═══════════════════════════════════════════════════════════
+local configWin, configStroke, configCloseBtn = makeSubWin("Configs",300,420)
+
+local cfgBody=Instance.new("ScrollingFrame")
+cfgBody.BackgroundTransparency=1; cfgBody.BorderSizePixel=0
+cfgBody.Position=UDim2.new(0,0,0,37)
+cfgBody.Size=UDim2.new(1,0,1,-37)
+cfgBody.CanvasSize=UDim2.new(0,0,0,0)
+cfgBody.AutomaticCanvasSize=Enum.AutomaticSize.Y
+cfgBody.ScrollBarThickness=3
+cfgBody.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
+cfgBody.ZIndex=21; cfgBody.Parent=configWin
+do
+    local p=Instance.new("UIPadding")
+    p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
+    p.PaddingTop=UDim.new(0,10);  p.PaddingBottom=UDim.new(0,10)
+    p.Parent=cfgBody
+end
+addListLayout(cfgBody,6)
+
+sectionLabel(cfgBody,"SAVE CONFIG",1)
+
+-- Config name input
+local cfgNameBox=Instance.new("TextBox")
+cfgNameBox.BackgroundColor3=Color3.fromRGB(20,20,32)
+cfgNameBox.BorderSizePixel=0
+cfgNameBox.Size=UDim2.new(1,0,0,32)
+cfgNameBox.Font=Enum.Font.GothamSemibold; cfgNameBox.TextSize=11
+cfgNameBox.TextColor3=Color3.fromRGB(170,170,200)
+cfgNameBox.PlaceholderText="Config name..."
+cfgNameBox.PlaceholderColor3=Color3.fromRGB(36,36,56)
+cfgNameBox.Text=""; cfgNameBox.ClearTextOnFocus=false
+cfgNameBox.TextXAlignment=Enum.TextXAlignment.Left
+cfgNameBox.LayoutOrder=2; cfgNameBox.ZIndex=23; cfgNameBox.Parent=cfgBody
+addCorner(cfgNameBox,7); addStroke(cfgNameBox,1,Color3.fromRGB(28,28,44))
+addPadding(cfgNameBox,8)
+
+local saveConfigBtn=newButton(cfgBody,{
+    BackgroundColor3=Color3.fromRGB(12,30,18),
+    Size=UDim2.new(1,0,0,32), ZIndex=23,
+    Font=Enum.Font.GothamBold, TextSize=11,
+    TextColor3=Color3.fromRGB(68,170,102), Text="Save Current Config",
+})
+saveConfigBtn.LayoutOrder=3
+addCorner(saveConfigBtn,7); addStroke(saveConfigBtn,1.5,Color3.fromRGB(26,64,38))
+
+sectionLabel(cfgBody,"SAVED CONFIGS",4)
+
+-- Config list scroll
+local cfgListScroll=Instance.new("ScrollingFrame")
+cfgListScroll.BackgroundTransparency=1; cfgListScroll.BorderSizePixel=0
+cfgListScroll.Size=UDim2.new(1,0,0,180)
+cfgListScroll.CanvasSize=UDim2.new(0,0,0,0)
+cfgListScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+cfgListScroll.ScrollBarThickness=3
+cfgListScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
+cfgListScroll.LayoutOrder=5; cfgListScroll.ZIndex=23; cfgListScroll.Parent=cfgBody
+addListLayout(cfgListScroll,4)
+
+-- Autoload toggle row
+sectionLabel(cfgBody,"OPTIONS",6)
+local _autoloadRow, getAutoload, setAutoload = makeToggleRow(cfgBody,"Autoload last config on join",false,7)
+
+-- ── CONFIG DATA ──────────────────────────────────────────────
+-- Configs stored as: { [name] = { conditions=..., settings=..., autoload=name } }
+local savedConfigs = {}   -- { {name=string, conditions=table, settings=table} }
+local autoloadName = nil  -- name of config to autoload
+
+-- Attempt to load from a StringValue in PlayerData (persists if server saves it)
+local cfgStore = LocalPlayer:WaitForChild("PlayerData"):FindFirstChild("HUDConfigs")
+if not cfgStore then
+    cfgStore = Instance.new("StringValue")
+    cfgStore.Name = "HUDConfigs"
+    cfgStore.Parent = LocalPlayer:WaitForChild("PlayerData")
+end
+
+local function serializeConfig()
+    local conds = {}
+    for _, c in ipairs(Conditions) do
+        table.insert(conds, {
+            stands = c.stands,
+            minStr = c.minStr, minSpd = c.minSpd, minSpc = c.minSpc,
+            skins  = c.skins,  traits = c.traits,
+        })
+    end
+    return {
+        conditions    = conds,
+        globalStop    = Settings.globalStop,
+        autorollDelay = Settings.autorollDelay,
+        webhookURL    = Settings.webhookURL,
     }
-    corner(7, btn)
-    return btn
 end
 
-local settingsTabBtn = makeTabBtn("⚙", 10)
-local webhookTabBtn  = makeTabBtn("◉", 46)
-
--- Kill button at strip bottom
-local stripKillBtn = button{
-    AnchorPoint      = Vector2.new(0.5, 1),
-    Position         = UDim2.new(0.5, 0, 1, -10),
-    Size             = UDim2.new(0, 30, 0, 30),
-    BackgroundColor3 = Color3.fromRGB(0,0,0),
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Font             = Enum.Font.GothamBold,
-    TextSize         = 13,
-    TextColor3       = Color3.fromRGB(90,32,32),
-    Text             = "✕",
-    ZIndex           = 12,
-    Parent           = tabStrip,
-}
-corner(7, stripKillBtn)
-
-------------------------------------------------------------
---  SETTINGS WINDOW
-------------------------------------------------------------
--- TODO: build full settings window with:
---   • Conditions dropdown (list of Conditions[])
---   • Add Condition button → opens wizard frames
---   • Global Stop toggle
---   • Roll delay row
--- (stub frame for now — full implementation next pass)
-local settingsWin = frame{
-    Name             = "SettingsWin",
-    BackgroundColor3 = C.bg,
-    BorderSizePixel  = 0,
-    Position         = UDim2.new(1, 10, 0, 0),   -- right of HUD, repositioned on open
-    Size             = UDim2.new(0, 290, 0, 400),
-    Visible          = false,
-    ZIndex           = 20,
-    Parent           = screenGui,
-}
-corner(16, settingsWin)
-local settingsStroke = stroke(1.5, C.border, settingsWin)
--- title bar
-local settingsTitleBar = frame{
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Size             = UDim2.new(1,0,0,36),
-    ZIndex           = 21,
-    Parent           = settingsWin,
-}
-makeDraggable(settingsTitleBar, settingsWin)
-label{
-    Position     = UDim2.new(0,14,0,0),
-    Size         = UDim2.new(1,-34,1,0),
-    Font         = Enum.Font.GothamBold,
-    TextSize     = 10,
-    TextColor3   = C.textFaint,
-    TextXAlignment=Enum.TextXAlignment.Left,
-    Text         = "SETTINGS",
-    ZIndex       = 22,
-    Parent       = settingsTitleBar,
-}
-local settingsCloseBtn = button{
-    AnchorPoint  = Vector2.new(1,0.5),
-    Position     = UDim2.new(1,-10,0.5,0),
-    Size         = UDim2.new(0,20,0,20),
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Font         = Enum.Font.GothamBold,
-    TextSize     = 12,
-    TextColor3   = Color3.fromRGB(51,51,72),
-    Text         = "✕",
-    ZIndex       = 22,
-    Parent       = settingsTitleBar,
-}
--- (Body: conditions list, global stop toggle, delay row — built in next pass)
-
-------------------------------------------------------------
---  WEBHOOK WINDOW
-------------------------------------------------------------
-local webhookWin = frame{
-    Name             = "WebhookWin",
-    BackgroundColor3 = C.bg,
-    BorderSizePixel  = 0,
-    Position         = UDim2.new(1, 10, 0, 0),
-    Size             = UDim2.new(0, 260, 0, 260),
-    Visible          = false,
-    ZIndex           = 20,
-    Parent           = screenGui,
-}
-corner(16, webhookWin)
-local webhookStroke = stroke(1.5, C.border, webhookWin)
-local webhookTitleBar = frame{
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Size             = UDim2.new(1,0,0,36),
-    ZIndex           = 21,
-    Parent           = webhookWin,
-}
-makeDraggable(webhookTitleBar, webhookWin)
-label{
-    Position     = UDim2.new(0,14,0,0),
-    Size         = UDim2.new(1,-34,1,0),
-    Font         = Enum.Font.GothamBold,
-    TextSize     = 10,
-    TextColor3   = C.textFaint,
-    TextXAlignment=Enum.TextXAlignment.Left,
-    Text         = "WEBHOOK",
-    ZIndex       = 22,
-    Parent       = webhookTitleBar,
-}
-local webhookCloseBtn = button{
-    AnchorPoint  = Vector2.new(1,0.5),
-    Position     = UDim2.new(1,-10,0.5,0),
-    Size         = UDim2.new(0,20,0,20),
-    BackgroundTransparency = 1,
-    BorderSizePixel  = 0,
-    Font         = Enum.Font.GothamBold,
-    TextSize     = 12,
-    TextColor3   = Color3.fromRGB(51,51,72),
-    Text         = "✕",
-    ZIndex       = 22,
-    Parent       = webhookTitleBar,
-}
--- (Body: URL input, test button, notify toggles — built in next pass)
-
-------------------------------------------------------------
---  WINDOW OPEN/CLOSE
-------------------------------------------------------------
-local function openWin(win, refFrame)
-    local rPos = refFrame.AbsolutePosition
-    local rSz  = refFrame.AbsoluteSize
-    win.Position = UDim2.new(0, rPos.X + rSz.X + 10, 0, rPos.Y)
-    win.Visible  = true
+local function applyConfig(cfg)
+    -- Restore conditions
+    Conditions = {}
+    for _, c in ipairs(cfg.conditions or {}) do
+        table.insert(Conditions, {
+            stands = c.stands or {},
+            minStr = c.minStr or "A",
+            minSpd = c.minSpd or "A",
+            minSpc = c.minSpc or "A",
+            skins  = c.skins  or {},
+            traits = c.traits or {},
+        })
+    end
+    -- Restore settings
+    if cfg.globalStop    ~= nil then Settings.globalStop    = cfg.globalStop    end
+    if cfg.autorollDelay ~= nil then Settings.autorollDelay = cfg.autorollDelay end
+    if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
+        cfgNameBox.Text = cfg.webhookURL  -- update URL box if open
+    end
+    renderConditions()
 end
 
-local function toggleWin(win, btn, refFrame)
-    if win.Visible then
-        win.Visible = false
-        btn.BackgroundTransparency = 1
-        btn.TextColor3 = Color3.fromRGB(56,56,80)
-    else
-        openWin(win, refFrame)
-        btn.BackgroundTransparency = 0.93
-        btn.TextColor3 = C.white
+local function persistConfigs()
+    -- Save all configs + autoload name to the StringValue
+    local t = { configs = {}, autoload = autoloadName }
+    for _, cfg in ipairs(savedConfigs) do
+        table.insert(t.configs, cfg)
+    end
+    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, t)
+    if ok then cfgStore.Value = encoded end
+end
+
+local function renderConfigList()
+    cfgListScroll:ClearAllChildren()
+    addListLayout(cfgListScroll,4)
+
+    if #savedConfigs == 0 then
+        local empty=newLabel(cfgListScroll,{
+            Size=UDim2.new(1,0,0,32),
+            Font=Enum.Font.Gotham, TextSize=11,
+            TextColor3=C.textFaint, Text="No saved configs yet.",
+        })
+        empty.LayoutOrder=1
+        return
+    end
+
+    for idx, cfg in ipairs(savedConfigs) do
+        local isAuto = autoloadName == cfg.name
+        local row=newFrame(cfgListScroll,{
+            BackgroundColor3=Color3.fromRGB(19,19,28),
+            Size=UDim2.new(1,0,0,42), ZIndex=24,
+        })
+        addCorner(row,7)
+        addStroke(row,1, isAuto and Color3.fromRGB(40,100,60) or Color3.fromRGB(26,26,40))
+        row.LayoutOrder=idx
+
+        -- autoload indicator dot
+        local dot=newFrame(row,{
+            BackgroundColor3=isAuto and C.green or Color3.fromRGB(36,36,56),
+            Position=UDim2.new(0,8,0.5,-4),
+            Size=UDim2.new(0,8,0,8), ZIndex=25,
+        })
+        addCorner(dot,100)
+
+        -- name
+        newLabel(row,{
+            Position=UDim2.new(0,22,0,4), Size=UDim2.new(1,-90,0,18),
+            Font=Enum.Font.GothamBold, TextSize=12,
+            TextColor3=isAuto and Color3.fromRGB(68,200,102) or C.white,
+            Text=cfg.name, ZIndex=25,
+        })
+        -- condition count
+        newLabel(row,{
+            Position=UDim2.new(0,22,0,22), Size=UDim2.new(1,-90,0,14),
+            Font=Enum.Font.Gotham, TextSize=9,
+            TextColor3=C.textFaint,
+            Text=#cfg.conditions.." condition"..(#cfg.conditions~=1 and "s" or ""), ZIndex=25,
+        })
+
+        -- Load button
+        local loadBtn=newButton(row,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-36,0.5,0),
+            Size=UDim2.new(0,28,0,26),
+            BackgroundColor3=Color3.fromRGB(20,30,50),
+            Font=Enum.Font.GothamBold, TextSize=9,
+            TextColor3=Color3.fromRGB(85,153,238), Text="↓", ZIndex=26,
+        })
+        addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
+        local ci=idx
+        loadBtn.MouseButton1Click:Connect(function()
+            applyConfig(savedConfigs[ci].data)
+        end)
+
+        -- Auto toggle button
+        local autoBtn2=newButton(row,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-68,0.5,0),
+            Size=UDim2.new(0,28,0,26),
+            BackgroundColor3=isAuto and Color3.fromRGB(12,34,20) or Color3.fromRGB(20,20,32),
+            Font=Enum.Font.GothamBold, TextSize=9,
+            TextColor3=isAuto and C.green or C.textMuted, Text="★", ZIndex=26,
+        })
+        addCorner(autoBtn2,6)
+        addStroke(autoBtn2,1, isAuto and Color3.fromRGB(26,74,40) or Color3.fromRGB(30,30,48))
+        autoBtn2.MouseButton1Click:Connect(function()
+            autoloadName = isAuto and nil or savedConfigs[ci].name
+            persistConfigs()
+            renderConfigList()
+        end)
+
+        -- Delete button
+        local delBtn2=newButton(row,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-6,0.5,0),
+            Size=UDim2.new(0,26,0,26),
+            BackgroundTransparency=1,
+            Font=Enum.Font.GothamBold, TextSize=11,
+            TextColor3=Color3.fromRGB(80,30,30), Text="x", ZIndex=26,
+        })
+        delBtn2.MouseButton1Click:Connect(function()
+            if autoloadName==savedConfigs[ci].name then autoloadName=nil end
+            table.remove(savedConfigs, ci)
+            persistConfigs()
+            renderConfigList()
+        end)
     end
 end
 
-settingsTabBtn.MouseButton1Click:Connect(function()
-    toggleWin(settingsWin, settingsTabBtn, hudHolder)
-end)
-webhookTabBtn.MouseButton1Click:Connect(function()
-    toggleWin(webhookWin, webhookTabBtn, hudHolder)
-end)
-settingsCloseBtn.MouseButton1Click:Connect(function()
-    settingsWin.Visible = false
-    settingsTabBtn.BackgroundTransparency = 1
-    settingsTabBtn.TextColor3 = Color3.fromRGB(56,56,80)
-end)
-webhookCloseBtn.MouseButton1Click:Connect(function()
-    webhookWin.Visible = false
-    webhookTabBtn.BackgroundTransparency = 1
-    webhookTabBtn.TextColor3 = Color3.fromRGB(56,56,80)
-end)
-autoBtn.MouseButton1Click:Connect(toggleAutoroll)
-killBtn.MouseButton1Click:Connect(killScript)
-stripKillBtn.MouseButton1Click:Connect(killScript)
-
-------------------------------------------------------------
---  FLASH OVERLAY
-------------------------------------------------------------
-local flashFrame = frame{
-    BackgroundColor3     = Color3.fromRGB(255,30,30),
-    BackgroundTransparency = 1,
-    BorderSizePixel      = 0,
-    Size                 = UDim2.new(1,0,1,0),
-    ZIndex               = 50,
-    Parent               = screenGui,
-}
-local function triggerFlash()
-    flashFrame.BackgroundTransparency = 0.8
-    TweenService:Create(flashFrame, TweenInfo.new(0.07), {BackgroundTransparency=0.5}):Play()
-    task.delay(0.07, function()
-        TweenService:Create(flashFrame, TweenInfo.new(0.5), {BackgroundTransparency=1}):Play()
-    end)
-end
-
---==========================================================
---  HUD UPDATE  (called on StandValue.Changed)
---==========================================================
-local lastSig   = ""
-local lastGrades= {str="D",spd="D",spc="D"}
-
-local rainbowTargets = {str=false,spd=false,spc=false,skin=false}
-
-local function updateHUD()
-    if not alive then return end
-    local info = parseStand(StandValue.Value)
-
-    nameLabel.Text = info.name
-
-    -- Skin pill
-    if info.skin and info.skin ~= "" then
-        local tw = TextService:GetTextSize(info.skin, 10, Enum.Font.GothamBold, Vector2.new(300,20)).X
-        skinPill.Size    = UDim2.new(0, tw+16, 0, 20)
-        skinPillLabel.Text = info.skin
-        skinPill.Visible = true
-        rainbowTargets.skin = true
-    else
-        skinPill.Visible = false
-        rainbowTargets.skin = false
+saveConfigBtn.MouseButton1Click:Connect(function()
+    local name = cfgNameBox.Text
+    if name=="" then name="Config "..(#savedConfigs+1) end
+    -- overwrite if same name exists
+    for i, cfg in ipairs(savedConfigs) do
+        if cfg.name==name then
+            savedConfigs[i].data=serializeConfig()
+            persistConfigs(); renderConfigList(); return
+        end
     end
+    table.insert(savedConfigs,{name=name, data=serializeConfig(), conditions=Conditions})
+    persistConfigs(); renderConfigList()
+end)
 
-    -- Trait
-    traitValLabel.Text      = info.trait ~= "Unknown" and info.trait or "—"
-    traitValLabel.TextColor3= info.trait:lower()=="transcendent" and C.purple or C.textDim
-
-    -- Stats
-    local grades = {
-        str = numToGrade(info.strength),
-        spd = numToGrade(info.speed),
-        spc = numToGrade(info.specialty),
-    }
-    lastGrades = grades
-    local allS = grades.str=="S" and grades.spd=="S" and grades.spc=="S"
-
-    for i, key in ipairs({"str","spd","spc"}) do
-        local g   = grades[key]
-        local obj = statObjects[i]
-        rainbowTargets[key] = (g=="S")
-        obj.gradeLbl.Text       = g
-        obj.gradeLbl.TextColor3 = gradeColor(g)
-        obj.bar.BackgroundColor3= barColor(g)
-        obj.bar.Size = UDim2.new(GRADE_ORDER[g]/5, 0, 1, 0)
-    end
-
-    -- Stand name pulse for specials (re-evaluated each update)
-    -- (driven by RenderStepped below)
-
-    -- Signature check — only act on new rolls
-    local sig = string.format("%s|%s|%s|%d|%d|%d",
-        info.name, tostring(info.skin), info.trait,
-        info.strength, info.speed, info.specialty)
-
-    if sig ~= lastSig then
-        lastSig = sig
-
-        -- Flash on special stands that have skins
-        local isSpecial = false  -- fill in from SPECIAL_STANDS if desired
-        if isSpecial and info.skin then triggerFlash() end
-
-        -- Check stop conditions
-        if autoroll then
-            local reason = checkStopConditions(info)
-            if reason then
-                stopAutoroll(reason)
-                sendWebhook(info, reason)
+-- Load persisted configs from StringValue on start
+do
+    local raw = cfgStore.Value
+    if raw and raw~="" then
+        local ok, t = pcall(HttpService.JSONDecode, HttpService, raw)
+        if ok and type(t)=="table" then
+            for _, cfg in ipairs(t.configs or {}) do
+                table.insert(savedConfigs, cfg)
+            end
+            autoloadName = t.autoload
+            -- Autoload on join
+            if autoloadName then
+                for _, cfg in ipairs(savedConfigs) do
+                    if cfg.name==autoloadName then
+                        applyConfig(cfg.data)
+                        break
+                    end
+                end
             end
         end
     end
 end
 
-table.insert(connections, StandValue.Changed:Connect(updateHUD))
-updateHUD()
+renderConfigList()
 
---==========================================================
---  KEYBIND
---==========================================================
-table.insert(connections, UserInputService.InputBegan:Connect(function(inp, gp)
-    if not alive or gp then return end
-    if inp.KeyCode == Enum.KeyCode.Y then killScript() end
-end))
+-- ═══════════════════════════════════════════════════════════
+--  CONDITIONS LIST  (renders into condListContainer)
+-- ═══════════════════════════════════════════════════════════
+local condListOpen = true
 
---==========================================================
---  GLOW SYSTEM  (RenderStepped)
---  All windows share the same border color at the same tick.
---  Triple-S → slow rainbow cycle on all borders simultaneously.
---  Otherwise → average grade color, smoothly lerped.
---==========================================================
-local glowR, glowG, glowB = 30, 30, 42
-local targetR, targetG, targetB = 30, 30, 42
+local COND_COLORS = {
+    Color3.fromRGB(170,51,51),  Color3.fromRGB(170,128,32),
+    Color3.fromRGB(85,153,238), Color3.fromRGB(68,187,102),
+    Color3.fromRGB(153,68,204), Color3.fromRGB(204,102,34),
+}
+local function condColor(stands)
+    if not stands or #stands==0 then return COND_COLORS[1] end
+    local h=0
+    for ch in tostring(stands[1]):gmatch(".") do h=(h*31+ch:byte())%#COND_COLORS end
+    return COND_COLORS[h+1]
+end
 
-local GRADE_GLOW = {
-    S = {200,160,40},
-    A = {51,102,170},
-    B = {42,122,68},
-    C = {54,54,80},
-    D = {30,30,42},
+local function renderConditions()
+    condListContainer:ClearAllChildren()
+    addListLayout(condListContainer,3)
+    condCountLbl.Text = #Conditions.." active"
+
+    for i, cond in ipairs(Conditions) do
+        local item=newFrame(condListContainer,{
+            BackgroundColor3=Color3.fromRGB(19,19,24),
+            Size=UDim2.new(1,0,0,58), ZIndex=24,
+        })
+        addCorner(item,6)
+        addStroke(item,1,Color3.fromRGB(25,25,38))
+        item.LayoutOrder=i
+
+        -- dot
+        local dot=newFrame(item,{
+            BackgroundColor3=condColor(cond.stands),
+            Position=UDim2.new(0,8,0.5,-3),
+            Size=UDim2.new(0,6,0,6), ZIndex=25,
+        })
+        addCorner(dot,100)
+
+        -- name
+        local standText = (#(cond.stands or {})>1)
+            and (#cond.stands.." stands")
+            or ((cond.stands or {"?"})[1])
+        newLabel(item,{
+            Position=UDim2.new(0,20,0,6), Size=UDim2.new(0.5,0,0,20),
+            Font=Enum.Font.GothamSemibold, TextSize=11,
+            TextColor3=C.textDim, Text=standText, ZIndex=25,
+        })
+
+        -- tags
+        local tagRow=newFrame(item,{
+            BackgroundTransparency=1,
+            Position=UDim2.new(0,20,0,30),
+            Size=UDim2.new(1,-50,0,16), ZIndex=25,
+        })
+        local tagLayout=Instance.new("UIListLayout")
+        tagLayout.FillDirection=Enum.FillDirection.Horizontal
+        tagLayout.Padding=UDim.new(0,4)
+        tagLayout.SortOrder=Enum.SortOrder.LayoutOrder
+        tagLayout.Parent=tagRow
+
+        local function makeTag(text, bgColor, txtColor, order)
+            local t=newLabel(tagRow,{
+                Size=UDim2.new(0,0,0,16),
+                Font=Enum.Font.GothamBold, TextSize=9,
+                TextColor3=txtColor, Text=text,
+                BackgroundTransparency=0,
+                ZIndex=26,
+            })
+            t.BackgroundColor3=bgColor
+            t.AutomaticSize=Enum.AutomaticSize.X
+            t.LayoutOrder=order
+            addCorner(t,4)
+            addPadding(t,5)
+            return t
+        end
+
+        makeTag(cond.minStr.."/"..cond.minSpd.."/"..cond.minSpc,
+            Color3.fromRGB(42,30,4), Color3.fromRGB(170,128,32), 1)
+        if #(cond.skins or {})>0 then
+            makeTag(#cond.skins.." skin"..(#cond.skins>1 and "s" or ""),
+                Color3.fromRGB(26,10,32), Color3.fromRGB(136,68,170), 2)
+        end
+        if #(cond.traits or {})>0 then
+            makeTag(table.concat(cond.traits,", "),
+                Color3.fromRGB(8,24,32), Color3.fromRGB(34,136,170), 3)
+        end
+
+        -- delete button
+        local delBtn=newButton(item,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-6,0.5,0),
+            Size=UDim2.new(0,18,0,18),
+            BackgroundTransparency=1,
+            Font=Enum.Font.GothamBold, TextSize=12,
+            TextColor3=Color3.fromRGB(42,24,24), Text="x", ZIndex=26,
+        })
+        local idx=i
+        delBtn.MouseButton1Click:Connect(function()
+            table.remove(Conditions, idx)
+            renderConditions()
+        end)
+    end
+end
+
+local function toggleCondList()
+    condListOpen = not condListOpen
+    condListContainer.Visible = condListOpen
+    condChevBtn.Text = condListOpen and "▼" or "▶"
+end
+condChevBtn.MouseButton1Click:Connect(toggleCondList)
+local condHeaderClickBtn=newButton(condHeaderRow,{
+    BackgroundTransparency=1, Size=UDim2.new(1,0,1,0),
+    Text="", ZIndex=26,
+})
+condHeaderClickBtn.MouseButton1Click:Connect(toggleCondList)
+renderConditions()
+
+-- ═══════════════════════════════════════════════════════════
+--  CONDITION WIZARD  (3-step floating window)
+-- ═══════════════════════════════════════════════════════════
+local wizWin,wizStroke,wizCloseBtn=makeSubWin("Add Condition",340,480)
+wizWin.ZIndex=200
+wizWin.Visible=false
+
+-- step progress bar
+local wizStepsFrame=newFrame(wizWin,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,14,0,37),
+    Size=UDim2.new(1,-28,0,6), ZIndex=22,
+})
+local wizStepBars={}
+for i=1,3 do
+    local b=newFrame(wizStepsFrame,{
+        BackgroundColor3=Color3.fromRGB(26,26,40),
+        Position=UDim2.new((i-1)/3,i>1 and 4 or 0,0,2),
+        Size=UDim2.new(1/3,i<3 and -4 or 0,0,2),
+        ZIndex=23,
+    })
+    addCorner(b,100); wizStepBars[i]=b
+end
+
+local wizTitleLabel -- reference to the subtitle label inside the window title bar
+-- find it (3rd child of titleBar which is child 1 of wizWin)
+for _,v in ipairs(wizWin:GetChildren()) do
+    if v:IsA("Frame") and v.Size==UDim2.new(1,0,0,36) then
+        for _,l in ipairs(v:GetChildren()) do
+            if l:IsA("TextLabel") then wizTitleLabel=l break end
+        end
+        break
+    end
+end
+
+-- wizard body scroll
+local wizScroll=Instance.new("ScrollingFrame")
+wizScroll.BackgroundTransparency=1; wizScroll.BorderSizePixel=0
+wizScroll.Position=UDim2.new(0,0,0,50)
+wizScroll.Size=UDim2.new(1,0,1,-105)
+wizScroll.CanvasSize=UDim2.new(0,0,0,0)
+wizScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+wizScroll.ScrollBarThickness=3
+wizScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
+wizScroll.ZIndex=22; wizScroll.Parent=wizWin
+addPadding(wizScroll,14)
+addListLayout(wizScroll,8)
+
+-- wizard footer
+local wizFooter=newFrame(wizWin,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,0,1,-50),
+    Size=UDim2.new(1,0,0,50), ZIndex=22,
+})
+newFrame(wizFooter,{
+    BackgroundColor3=C.divider,
+    Size=UDim2.new(1,0,0,1), ZIndex=23,
+})
+local wizBackBtn=newButton(wizFooter,{
+    Position=UDim2.new(0,14,0,10), Size=UDim2.new(0,70,0,28),
+    BackgroundTransparency=1, Font=Enum.Font.GothamSemibold,
+    TextSize=12, TextColor3=C.textMuted, Text="\xe2\x86\x90 Back", ZIndex=23,
+})
+local wizNextBtn=newButton(wizFooter,{
+    AnchorPoint=Vector2.new(1,0),
+    Position=UDim2.new(1,-14,0,10), Size=UDim2.new(0,110,0,28),
+    BackgroundColor3=Color3.fromRGB(30,30,58),
+    Font=Enum.Font.GothamBold, TextSize=12,
+    TextColor3=Color3.fromRGB(136,136,204), Text="Next \xe2\x86\x92", ZIndex=23,
+})
+addCorner(wizNextBtn,7)
+addStroke(wizNextBtn,1.5,Color3.fromRGB(58,58,102))
+local wizSkipBtn=newButton(wizFooter,{
+    AnchorPoint=Vector2.new(1,0),
+    Position=UDim2.new(1,-130,0,10), Size=UDim2.new(0,60,0,28),
+    BackgroundTransparency=1, Font=Enum.Font.GothamSemibold,
+    TextSize=12, TextColor3=C.textMuted, Text="Skip", ZIndex=23,
+    Visible=false,
+})
+
+-- wizard state
+local wData={stands={},minStr="A",minSpd="A",minSpc="A",skins={},traits={}}
+local wStep=0
+
+local function setWizStep(s)
+    wStep=s
+    local titles={"Step 1 — Stand & Stats","Step 2 — Skins","Step 3 — Traits"}
+    if wizTitleLabel then wizTitleLabel.Text=titles[s+1] end
+    for i=1,3 do
+        wizStepBars[i].BackgroundColor3 = i-1<s and Color3.fromRGB(85,85,187)
+                                       or i-1==s and Color3.fromRGB(136,136,221)
+                                       or Color3.fromRGB(26,26,40)
+    end
+    -- clear scroll body
+    for _,v in ipairs(wizScroll:GetChildren()) do
+        if not v:IsA("UIListLayout") and not v:IsA("UIPadding") then v:Destroy() end
+    end
+    wizSkipBtn.Visible=false
+    wizBackBtn.Visible=s>0
+
+    if s==0 then
+        -- STEP 1: Stand multi-select + stat minimums
+        local titleLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,18),
+            Font=Enum.Font.GothamBlack, TextSize=13,
+            TextColor3=Color3.fromRGB(192,192,216), Text="Which stands are you targeting?",
+            ZIndex=23,
+        })
+        titleLbl.LayoutOrder=0
+        local subLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,30),
+            Font=Enum.Font.Gotham, TextSize=11,
+            TextColor3=C.textDim, Text="Select one or more stands. Autoroll stops when any selected stand meets the stat requirements.",
+            ZIndex=23,
+        })
+        subLbl.TextWrapped=true; subLbl.LayoutOrder=1
+
+        -- Stand grid (2-col)
+        local grid=newFrame(wizScroll,{
+            BackgroundTransparency=1,
+            Size=UDim2.new(1,-28,0,0),
+            ZIndex=23,
+        })
+        grid.AutomaticSize=Enum.AutomaticSize.Y
+        grid.LayoutOrder=2
+        local gridLayout=Instance.new("UIGridLayout")
+        gridLayout.CellSize=UDim2.new(0.5,-4,0,28)
+        gridLayout.CellPadding=UDim2.new(0,4,0,4)
+        gridLayout.SortOrder=Enum.SortOrder.LayoutOrder
+        gridLayout.Parent=grid
+
+        for _, standName in ipairs(STAND_NAMES) do
+            local sel=table.find(wData.stands,standName)~=nil
+            local sn=standName
+            local btn=newButton(grid,{
+                BackgroundColor3=sel and Color3.fromRGB(20,20,42) or Color3.fromRGB(20,20,32),
+                Size=UDim2.new(0,1,0,1), -- overridden by grid layout
+                Font=Enum.Font.GothamSemibold, TextSize=11,
+                TextColor3=sel and Color3.fromRGB(170,170,238) or C.textDim,
+                Text=sn, ZIndex=24,
+            })
+            addCorner(btn,7)
+            addStroke(btn,1.5,sel and Color3.fromRGB(85,85,170) or Color3.fromRGB(30,30,48))
+            btn.MouseButton1Click:Connect(function()
+                local idx=table.find(wData.stands,sn)
+                if idx then table.remove(wData.stands,idx)
+                else table.insert(wData.stands,sn) end
+                setWizStep(0) -- re-render
+            end)
+        end
+
+        -- stat minimums
+        local statsLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,14),
+            Font=Enum.Font.GothamBold, TextSize=9,
+            TextColor3=C.textFaint, Text="MINIMUM STATS",
+        })
+        statsLbl.LayoutOrder=3
+
+        local statKeys={"minStr","minSpd","minSpc"}
+        for i,statName in ipairs({"STR","SPD","SPC"}) do
+            local key=statKeys[i]
+            local row=newFrame(wizScroll,{
+                BackgroundColor3=C.rowBg,
+                Size=UDim2.new(1,-28,0,36), ZIndex=23,
+            })
+            addCorner(row,7)
+            addStroke(row,1,C.rowBorder)
+            row.LayoutOrder=3+i
+
+            -- stat label on left
+            newLabel(row,{
+                Position=UDim2.new(0,10,0,0), Size=UDim2.new(0,30,1,0),
+                Font=Enum.Font.GothamBold, TextSize=9,
+                TextColor3=C.textFaint, Text=statName, ZIndex=24,
+            })
+
+            -- grade buttons in a layout frame so they never overflow
+            local gradeHolder=newFrame(row,{
+                BackgroundTransparency=1,
+                Position=UDim2.new(0,44,0,4),
+                Size=UDim2.new(1,-54,0,28), ZIndex=24,
+            })
+            local gl=Instance.new("UIListLayout")
+            gl.FillDirection=Enum.FillDirection.Horizontal
+            gl.Padding=UDim.new(0,4)
+            gl.SortOrder=Enum.SortOrder.LayoutOrder
+            gl.Parent=gradeHolder
+
+            for gi, g in ipairs(GRADE_NAMES) do
+                local sel=wData[key]==g
+                local gv=g
+                local gradeCol = gc(g)
+                local gradebtn=newButton(gradeHolder,{
+                    Size=UDim2.new(0,36,0,28),
+                    -- selected: very faint grade tint bg so letter stays readable
+                    BackgroundColor3=sel
+                        and Color3.new(gradeCol.R*0.12, gradeCol.G*0.12, gradeCol.B*0.12)
+                        or  Color3.fromRGB(17,17,24),
+                    Font=Enum.Font.GothamBold, TextSize=12,
+                    -- selected: white letter (readable against tint), unselected: dim
+                    TextColor3=sel and Color3.fromRGB(230,230,230) or Color3.fromRGB(52,52,68),
+                    Text=g, ZIndex=25,
+                })
+                gradebtn.LayoutOrder=gi
+                addCorner(gradebtn,5)
+                -- border glows grade colour when selected
+                addStroke(gradebtn, sel and 2 or 1,
+                    sel and gradeCol or Color3.fromRGB(28,28,38))
+                gradebtn.MouseButton1Click:Connect(function()
+                    wData[key]=gv; setWizStep(0)
+                end)
+            end
+        end
+
+        wizNextBtn.Text="Next \xe2\x86\x92"
+        wizNextBtn.BackgroundTransparency=#wData.stands==0 and 0.5 or 0
+
+    elseif s==1 then
+        -- STEP 2: Skin grid
+        wizSkipBtn.Visible=true
+        local titleLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,18),
+            Font=Enum.Font.GothamBlack, TextSize=13,
+            TextColor3=Color3.fromRGB(192,192,216), Text="Target skins",
+        })
+        titleLbl.LayoutOrder=0
+        local subLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,28),
+            Font=Enum.Font.Gotham, TextSize=11,
+            TextColor3=C.textDim, Text="Autoroll stops on any selected skin, regardless of stand.",
+        })
+        subLbl.TextWrapped=true; subLbl.LayoutOrder=1
+
+        -- Search bar
+        local skinSearchBox=Instance.new("TextBox")
+        skinSearchBox.BackgroundColor3=Color3.fromRGB(20,20,32)
+        skinSearchBox.BorderSizePixel=0
+        skinSearchBox.Size=UDim2.new(1,-28,0,30)
+        skinSearchBox.Font=Enum.Font.GothamSemibold; skinSearchBox.TextSize=11
+        skinSearchBox.TextColor3=Color3.fromRGB(170,170,200)
+        skinSearchBox.PlaceholderText="Search skins..."
+        skinSearchBox.PlaceholderColor3=Color3.fromRGB(48,48,72)
+        skinSearchBox.Text=""; skinSearchBox.ClearTextOnFocus=false
+        skinSearchBox.TextXAlignment=Enum.TextXAlignment.Left
+        skinSearchBox.LayoutOrder=2; skinSearchBox.ZIndex=24; skinSearchBox.Parent=wizScroll
+        addCorner(skinSearchBox,6); addStroke(skinSearchBox,1,Color3.fromRGB(34,34,54))
+        addPadding(skinSearchBox,8)
+
+        -- Single-column list: skin name left, stand name right (HTML style)
+        local skinList=newFrame(wizScroll,{
+            BackgroundTransparency=1,
+            Size=UDim2.new(1,-28,0,0), ZIndex=23,
+        })
+        skinList.AutomaticSize=Enum.AutomaticSize.Y
+        skinList.LayoutOrder=3
+        addListLayout(skinList, 3)
+
+        local function rebuildSkinList(filter)
+            skinList:ClearAllChildren()
+            addListLayout(skinList, 3)
+            local f = filter:lower()
+            for _, sk in ipairs(SKIN_LIST) do
+                if f=="" or sk.name:lower():find(f, 1, true) then
+                    local sel=table.find(wData.skins,sk.name)~=nil
+                    local skn=sk.name
+                    local row=newButton(skinList,{
+                        BackgroundColor3=sel and Color3.fromRGB(22,10,36) or Color3.fromRGB(19,19,28),
+                        Size=UDim2.new(1,0,0,30), Text="", ZIndex=24,
+                    })
+                    addCorner(row,6)
+                    addStroke(row,1, sel and Color3.fromRGB(102,51,170) or Color3.fromRGB(28,28,42))
+                    local skinLabel = skn:match("^(.-)%s*%(") or skn
+                    local standLabel = skn:match("%((.-)%)") or ""
+                    newLabel(row,{
+                        Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
+                        Font=Enum.Font.GothamSemibold, TextSize=11,
+                        TextColor3=sel and Color3.fromRGB(187,136,238) or C.textDim,
+                        TextXAlignment=Enum.TextXAlignment.Left,
+                        Text=skinLabel, ZIndex=25,
+                    })
+                    newLabel(row,{
+                        AnchorPoint=Vector2.new(1,0.5),
+                        Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.38,0,1,0),
+                        Font=Enum.Font.Code, TextSize=9,
+                        TextColor3=sel and Color3.fromRGB(136,85,187) or C.textFaint,
+                        TextXAlignment=Enum.TextXAlignment.Right,
+                        Text=standLabel, ZIndex=25,
+                    })
+                    row.MouseButton1Click:Connect(function()
+                        local i=table.find(wData.skins,skn)
+                        if i then table.remove(wData.skins,i)
+                        else table.insert(wData.skins,skn) end
+                        rebuildSkinList(skinSearchBox.Text)
+                    end)
+                end
+            end
+        end
+        skinSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            rebuildSkinList(skinSearchBox.Text)
+        end)
+        rebuildSkinList("")
+                wizNextBtn.Text="Next \xe2\x86\x92"
+
+    elseif s==2 then
+        -- STEP 3: Trait multi-select chips
+        local titleLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,18),
+            Font=Enum.Font.GothamBlack, TextSize=13,
+            TextColor3=Color3.fromRGB(192,192,216), Text="Stop on traits",
+        })
+        titleLbl.LayoutOrder=0
+        local subLbl=newLabel(wizScroll,{
+            Size=UDim2.new(1,-28,0,28),
+            Font=Enum.Font.Gotham, TextSize=11,
+            TextColor3=C.textDim, Text="If the rolled stand has any selected trait AND meets step 1 conditions, autoroll stops.",
+        })
+        subLbl.TextWrapped=true; subLbl.LayoutOrder=1
+
+        -- UIGridLayout: 3 columns, auto-wrapping chips
+        local chipGrid=newFrame(wizScroll,{
+            BackgroundTransparency=1,
+            Size=UDim2.new(1,-28,0,0), ZIndex=23,
+        })
+        chipGrid.AutomaticSize=Enum.AutomaticSize.Y
+        chipGrid.LayoutOrder=2
+        local cgl=Instance.new("UIGridLayout")
+        cgl.CellSize=UDim2.new(0.333,-4,0,32)
+        cgl.CellPadding=UDim2.new(0,5,0,5)
+        cgl.SortOrder=Enum.SortOrder.LayoutOrder
+        cgl.Parent=chipGrid
+
+        for ci, trait in ipairs(TRAITS) do
+            local sel=table.find(wData.traits,trait)~=nil
+            local tv=trait
+            local chip=newButton(chipGrid,{
+                BackgroundColor3=sel and Color3.fromRGB(12,12,36) or Color3.fromRGB(20,20,32),
+                Size=UDim2.new(0,1,0,1), -- overridden by UIGridLayout
+                Font=Enum.Font.GothamSemibold, TextSize=11,
+                TextColor3=sel and Color3.fromRGB(170,170,238) or C.textDim,
+                Text=tv, ZIndex=24,
+            })
+            chip.LayoutOrder=ci
+            addCorner(chip,8)
+            addStroke(chip,1.5,sel and Color3.fromRGB(85,85,187) or Color3.fromRGB(30,30,48))
+            chip.MouseButton1Click:Connect(function()
+                local idx=table.find(wData.traits,tv)
+                if idx then table.remove(wData.traits,idx)
+                else table.insert(wData.traits,tv) end
+                setWizStep(2)
+            end)
+        end
+
+        wizNextBtn.Text="Save \xe2\x9c\x93"
+        wizNextBtn.BackgroundColor3=Color3.fromRGB(12,34,20)
+        addStroke(wizNextBtn,1.5,Color3.fromRGB(26,74,40))
+        wizNextBtn.TextColor3=Color3.fromRGB(68,170,102)
+    end
+end
+
+-- wizard button wiring
+wizNextBtn.MouseButton1Click:Connect(function()
+    if wStep==0 then
+        if #wData.stands==0 then return end
+        setWizStep(1)
+    elseif wStep==1 then
+        setWizStep(2)
+    elseif wStep==2 then
+        table.insert(Conditions,{
+            stands  = {table.unpack(wData.stands)},
+            minStr  = wData.minStr,
+            minSpd  = wData.minSpd,
+            minSpc  = wData.minSpc,
+            skins   = {table.unpack(wData.skins)},
+            traits  = {table.unpack(wData.traits)},
+        })
+        renderConditions()
+        wizWin.Visible=false
+    end
+end)
+wizBackBtn.MouseButton1Click:Connect(function()
+    if wStep>0 then setWizStep(wStep-1) end
+end)
+wizSkipBtn.MouseButton1Click:Connect(function()
+    setWizStep(wStep+1)
+end)
+wizCloseBtn.MouseButton1Click:Connect(function()
+    wizWin.Visible=false
+end)
+
+addCondBtn.MouseButton1Click:Connect(function()
+    wData={stands={},minStr="A",minSpd="A",minSpc="A",skins={},traits={}}
+    setWizStep(0)
+    task.defer(function()
+        local vp = workspace.CurrentCamera.ViewportSize
+        local hp = hudHolder.AbsolutePosition
+        local hs = hudHolder.AbsoluteSize
+        if hp.X == 0 and hp.Y == 0 then
+            hp = Vector2.new(20, vp.Y/2 - 100)
+            hs = Vector2.new(CARD_W, 200)
+        end
+        local ww = wizWin.AbsoluteSize.X > 0 and wizWin.AbsoluteSize.X or 340
+        local wh = wizWin.AbsoluteSize.Y > 0 and wizWin.AbsoluteSize.Y or 480
+        -- Side based on HUD position, same logic as openSubWin
+        local hudCentreX = hp.X + hs.X * 0.5
+        local xPos
+        if hudCentreX < vp.X * 0.5 then
+            xPos = hp.X + hs.X + 10
+        else
+            xPos = hp.X - ww - 10
+        end
+        xPos = math.max(4, math.min(xPos, vp.X - ww - 4))
+        local yPos = math.max(4, math.min(hp.Y, vp.Y - wh - 4))
+        wizWin.Position = UDim2.new(0, xPos, 0, yPos)
+        wizWin.Visible  = true
+    end)
+    setWizStep(0)
+end)
+
+-- ═══════════════════════════════════════════════════════════
+--  WINDOW OPEN / CLOSE
+-- ═══════════════════════════════════════════════════════════
+local function openSubWin(win)
+    task.defer(function()
+        local hp = hudHolder.AbsolutePosition
+        local hs = hudHolder.AbsoluteSize
+        local vp = workspace.CurrentCamera.ViewportSize
+        if hp.X == 0 and hp.Y == 0 then
+            hp = Vector2.new(20, vp.Y / 2 - 100)
+            hs = Vector2.new(CARD_W, 200)
+        end
+        local winW = win.AbsoluteSize.X > 0 and win.AbsoluteSize.X or 300
+        -- If HUD centre is on left half of screen, open to the right; else to the left
+        local hudCentreX = hp.X + hs.X * 0.5
+        local xPos
+        if hudCentreX < vp.X * 0.5 then
+            xPos = hp.X + hs.X + 10          -- right of HUD
+        else
+            xPos = hp.X - winW - 10           -- left of HUD
+        end
+        -- Clamp so window never goes off-screen
+        xPos = math.max(4, math.min(xPos, vp.X - winW - 4))
+        win.Position = UDim2.new(0, xPos, 0, math.max(4, hp.Y))
+        win.Visible  = true
+    end)
+end
+
+-- All sub-windows and their tab buttons, for mutual exclusion
+local subWinList = {}  -- filled after windows are created
+
+local function closeAllSubWins()
+    for _, entry in ipairs(subWinList) do
+        entry.win.Visible = false
+        entry.btn.BackgroundColor3 = C.btnBg
+        entry.btn.TextColor3 = C.textDim
+        local s = entry.btn:FindFirstChildOfClass("UIStroke")
+        if s then s.Color = C.btnBorder end
+    end
+    wizWin.Visible = false  -- always dismiss condition wizard when switching tabs
+end
+
+local function toggleSubWin(win, btn)
+    local wasOpen = win.Visible
+    closeAllSubWins()
+    if not wasOpen then
+        openSubWin(win)
+        btn.BackgroundColor3 = Color3.fromRGB(22,22,42)
+        btn.TextColor3 = C.white
+        local s = btn:FindFirstChildOfClass("UIStroke")
+        if s then s.Color = Color3.fromRGB(85,85,170) end
+    end
+end
+
+-- Register sub-windows for mutual exclusion
+subWinList = {
+    {win=settingsWin, btn=settingsTabBtn},
+    {win=webhookWin,  btn=webhookTabBtn},
+    {win=configWin,   btn=configTabBtn},
 }
 
-local function lerpN(a,b,t) return a+(b-a)*t end
+settingsTabBtn.MouseButton1Click:Connect(function() toggleSubWin(settingsWin,settingsTabBtn) end)
+webhookTabBtn.MouseButton1Click:Connect(function()  toggleSubWin(webhookWin, webhookTabBtn)  end)
+configTabBtn.MouseButton1Click:Connect(function()   toggleSubWin(configWin,  configTabBtn)   end)
+settingsCloseBtn.MouseButton1Click:Connect(function() closeAllSubWins() end)
+webhookCloseBtn.MouseButton1Click:Connect(function()  closeAllSubWins() end)
+configCloseBtn.MouseButton1Click:Connect(function()   closeAllSubWins() end)
 
-local allStrokes = {cardStroke, stripStroke, settingsStroke, webhookStroke}
+autoBtn.MouseButton1Click:Connect(toggleAutoroll)
+killBtn.MouseButton1Click:Connect(killScript)
+
+-- ═══════════════════════════════════════════════════════════
+--  FLASH OVERLAY
+-- ═══════════════════════════════════════════════════════════
+local flashFrame=newFrame(ScreenGui,{
+    BackgroundColor3=Color3.fromRGB(255,30,30),
+    BackgroundTransparency=1,
+    Size=UDim2.new(1,0,1,0), ZIndex=50,
+})
+local function triggerFlash()
+    flashFrame.BackgroundTransparency=0.75
+    TweenService:Create(flashFrame,TweenInfo.new(0.5),{BackgroundTransparency=1}):Play()
+end
+
+-- ═══════════════════════════════════════════════════════════
+--  HUD UPDATE
+-- ═══════════════════════════════════════════════════════════
+local lastSig    = ""
+local lastGrades = {str="D",spd="D",spc="D"}
+local rainbowOn  = false
+
+local function updateHUD()
+    if not alive then return end
+    local info=parseStand(StandValue.Value)
+
+    nameLabel.Text=info.name
+
+    if info.skin and info.skin~="" then
+        local bounds=TextService:GetTextSize(info.skin,10,Enum.Font.GothamBold,Vector2.new(300,20))
+        skinPill.Size=UDim2.new(0,bounds.X+16,0,20)
+        skinPillLabel.Text=info.skin
+        skinPill.Visible=true
+    else
+        skinPill.Visible=false
+    end
+
+    traitValLabel.Text=(info.trait~="Unknown") and info.trait or "\xe2\x80\x94"
+    traitValLabel.TextColor3=(info.trait:lower()=="transcendent") and C.purple or C.textDim
+
+    local g={str=numToGrade(info.strength),spd=numToGrade(info.speed),spc=numToGrade(info.specialty)}
+    lastGrades=g
+    rainbowOn=g.str=="S" and g.spd=="S" and g.spc=="S"
+
+    for i,key in ipairs({"str","spd","spc"}) do
+        local grade=g[key]; local obj=statObjects[i]
+        obj.gradeLbl.Text=grade
+        obj.gradeLbl.TextColor3=gc(grade)
+        obj.bar.BackgroundColor3=bc(grade)
+        obj.bar.Size=UDim2.new(GRADE_ORDER[grade]/5,0,1,0)
+    end
+
+    local sig=string.format("%s|%s|%s|%d|%d|%d",
+        info.name,tostring(info.skin),info.trait,info.strength,info.speed,info.specialty)
+    if sig==lastSig then return end
+    lastSig=sig
+
+    if autoroll then
+        local reason=checkStop(info)
+        if reason then
+            stopAutoroll(reason)
+            sendWebhook(info,reason)
+            if reason:find("JACKPOT") then triggerFlash() end
+        end
+    end
+end
+
+table.insert(connections, StandValue.Changed:Connect(updateHUD))
+
+-- Ensure all sub-windows are hidden on launch
+settingsWin.Visible = false
+webhookWin.Visible  = false
+configWin.Visible   = false
+wizWin.Visible      = false
+
+updateHUD()
+
+-- ═══════════════════════════════════════════════════════════
+--  KEYBIND
+-- ═══════════════════════════════════════════════════════════
+table.insert(connections, UserInputService.InputBegan:Connect(function(inp,gp)
+    if not alive or gp then return end
+    if inp.KeyCode==Enum.KeyCode.Y then killScript() end
+end))
+
+-- ═══════════════════════════════════════════════════════════
+--  GLOW SYSTEM  — single RenderStepped tick drives ALL strokes
+--  Same logic as HTML: one hue value, applied to every open window
+--  simultaneously. Triple-S = rainbow. Otherwise = averaged grade color.
+-- ═══════════════════════════════════════════════════════════
+local GRADE_GLOW={S={200,160,40},A={51,102,170},B={42,122,68},C={54,54,80},D={30,30,42}}
+local gR,gG,gB   = 30,30,42
+local tR,tG,tB   = 30,30,42
+local allStrokes  = {cardStroke,settingsStroke,webhookStroke,wizStroke,configStroke}
 
 table.insert(connections, RunService.RenderStepped:Connect(function()
     if not alive then return end
-    local t = tick()
+    local t=tick()
 
-    local allS = rainbowTargets.str and rainbowTargets.spd and rainbowTargets.spc
-
-    -- Compute target glow color
-    if allS then
-        -- Rainbow: drive all strokes from same hue tick
-        local hue = (t * 0.125) % 1
-        local c = Color3.fromHSV(hue, 0.88, 0.95)
-        local glow = Color3.fromHSV(hue, 0.88, 0.6)
-        for _, s in ipairs(allStrokes) do
-            s.Color = c
-        end
+    if rainbowOn then
+        -- One hue value drives every stroke at once — zero desync possible
+        local c=Color3.fromHSV((t*0.125)%1, 0.88, 0.55)
+        for _,s in ipairs(allStrokes) do s.Color=c end
         -- Grade letters rainbow
-        for i, key in ipairs({"str","spd","spc"}) do
-            statObjects[i].gradeLbl.TextColor3 = Color3.fromHSV(hue, 0.88, 1)
+        for i=1,3 do
+            statObjects[i].gradeLbl.TextColor3=Color3.fromHSV((t*0.125)%1,0.88,1)
         end
         -- Skin pill
-        if rainbowTargets.skin and skinPill.Visible then
-            skinPillStroke.Color = Color3.fromHSV(hue, 0.88, 0.95)
-            skinPill.BackgroundColor3 = Color3.fromHSV(hue, 0.88, 0.25)
+        if skinPill.Visible then
+            skinPillStroke.Color=Color3.fromHSV((t*0.125)%1,0.88,0.95)
+            skinPill.BackgroundColor3=Color3.fromHSV((t*0.125)%1,0.88,0.18)
         end
     else
-        -- Average grade color
-        local rr,gg,bb = 0,0,0
-        for _, key in ipairs({"str","spd","spc"}) do
-            local gc = GRADE_GLOW[lastGrades[key]] or GRADE_GLOW.D
-            rr += gc[1]/3; gg += gc[2]/3; bb += gc[3]/3
+        -- Average the three grade glow colors, smoothly lerp toward them
+        local rr,gg,bb=0,0,0
+        for _,key in ipairs({"str","spd","spc"}) do
+            local gc2=GRADE_GLOW[lastGrades[key]] or GRADE_GLOW.D
+            rr+=gc2[1]/3; gg+=gc2[2]/3; bb+=gc2[3]/3
         end
-        targetR,targetG,targetB = rr,gg,bb
-        glowR = lerpN(glowR, targetR, 0.055)
-        glowG = lerpN(glowG, targetG, 0.055)
-        glowB = lerpN(glowB, targetB, 0.055)
-        local c = Color3.fromRGB(math.round(glowR),math.round(glowG),math.round(glowB))
-        for _, s in ipairs(allStrokes) do s.Color = c end
-        -- Restore grade letter colors (non-rainbow)
-        for i, key in ipairs({"str","spd","spc"}) do
-            statObjects[i].gradeLbl.TextColor3 = gradeColor(lastGrades[key])
-        end
-        -- Skin pill normal
+        tR,tG,tB=rr,gg,bb
+        gR=lerpN(gR,tR,0.055); gG=lerpN(gG,tG,0.055); gB=lerpN(gB,tB,0.055)
+        local c=Color3.fromRGB(math.round(gR),math.round(gG),math.round(gB))
+        for _,s in ipairs(allStrokes) do s.Color=c end
+        local gradeKeys={"str","spd","spc"}
+        for i=1,3 do statObjects[i].gradeLbl.TextColor3=gc(lastGrades[gradeKeys[i]]) end
         if skinPill.Visible then
-            skinPillStroke.Color = Color3.fromRGB(200,134,10)
-            skinPill.BackgroundColor3 = Color3.fromRGB(42,28,4)
+            skinPillStroke.Color=Color3.fromRGB(200,134,10)
+            skinPill.BackgroundColor3=Color3.fromRGB(42,28,4)
         end
     end
 
-    -- Special stand name pulse
-    -- (isSpecial driven by condition check — TODO hook in)
-    -- nameLabel.TextColor3 = ...
-
-    -- Auto button pulse
+    -- AUTO button pulse
     if autoroll then
-        local p = (math.sin(t*4)+1)*0.5
-        autoBtn.BackgroundColor3 = lerpColor(Color3.fromRGB(34,12,12), Color3.fromRGB(56,18,18), p)
-        autoBtnStroke.Color      = lerpColor(Color3.fromRGB(102,20,20), Color3.fromRGB(200,44,44), p)
-        autoBtn.TextColor3       = Color3.fromRGB(200,68,68)
-        autoBtn.Text             = "AUTO  ON"
-        statusLabel.Text         = "rolling..."
-        statusLabel.TextColor3   = Color3.fromRGB(170,40,40)
+        local p=(math.sin(t*4)+1)*0.5
+        autoBtn.BackgroundColor3=lerpColor(Color3.fromRGB(34,12,12),Color3.fromRGB(56,18,18),p)
+        autoBtnStroke.Color=lerpColor(Color3.fromRGB(102,20,20),Color3.fromRGB(200,44,44),p)
+        autoBtn.TextColor3=Color3.fromRGB(200,68,68)
+        autoBtn.Text="AUTO ON"
+        statusLabel.Text="rolling..."
+        statusLabel.TextColor3=Color3.fromRGB(170,40,40)
     else
-        autoBtn.BackgroundColor3 = C.btnBg
-        autoBtnStroke.Color      = C.btnBorder
-        autoBtn.TextColor3       = C.textDim
-        autoBtn.Text             = "AUTO  OFF"
-
-        local sc, st = C.textFaint, "IDLE"
-        if stopReason == "GLOBAL_JACKPOT" or stopReason == "CONDITION_JACKPOT" then
-            sc=C.gold;    st="\u2746  jackpot!"
-        elseif stopReason == "CONDITION_TRAIT" then
-            sc=C.purple;  st="\u2605  trait match"
-        elseif stopReason == "CONDITION_MET" then
-            sc=C.gradeA;  st="\u25c8  condition met"
-        elseif stopReason == "CONDITION_SKIN" then
-            sc=C.red;     st="\u25c8  rare skin"
-        elseif stopReason == "MANUAL" then
-            sc=Color3.fromRGB(50,50,70); st="stopped"
+        autoBtn.BackgroundColor3=C.btnBg
+        autoBtnStroke.Color=C.btnBorder
+        autoBtn.TextColor3=C.textDim
+        autoBtn.Text="AUTO OFF"
+        local sc,st=C.textFaint,"IDLE"
+        if     stopReason=="GLOBAL_JACKPOT" or stopReason=="CONDITION_JACKPOT" then sc=C.gold;   st="\xe2\x9c\xa6  jackpot!"
+        elseif stopReason=="CONDITION_TRAIT"   then sc=C.purple; st="\xe2\x98\x85  trait match"
+        elseif stopReason=="CONDITION_MET"     then sc=C.gradeA; st="\xe2\x97\x88  condition met"
+        elseif stopReason=="CONDITION_SKIN"    then sc=C.red;    st="\xe2\x97\x88  rare skin"
+        elseif stopReason=="MANUAL"            then sc=Color3.fromRGB(50,50,70); st="stopped"
         end
-        statusLabel.TextColor3 = sc
-        statusLabel.Text       = st
+        statusLabel.TextColor3=sc; statusLabel.Text=st
     end
 end))
