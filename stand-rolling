@@ -1406,18 +1406,16 @@ local function setWizStep(s)
             for gi, g in ipairs(GRADE_NAMES) do
                 local sel=wData[key]==g
                 local gv=g
-                -- bg: very dark tint of grade colour when selected, near-black when not
-                local selBg = Color3.new(gc(g).R*0.08, gc(g).G*0.08, gc(g).B*0.08)
                 local gradebtn=newButton(gradeHolder,{
                     Size=UDim2.new(0,36,0,28),
-                    BackgroundColor3=sel and selBg or Color3.fromRGB(17,17,24),
+                    BackgroundColor3=Color3.fromRGB(17,17,24),  -- always same dark bg
                     Font=Enum.Font.Code, TextSize=13,
                     TextColor3=sel and gc(g) or Color3.fromRGB(52,52,68),
                     Text=g, ZIndex=25,
                 })
                 gradebtn.LayoutOrder=gi
                 addCorner(gradebtn,5)
-                -- border glows grade colour when selected, dim when not
+                -- border = grade colour when selected, nearly invisible when not
                 addStroke(gradebtn, sel and 1.5 or 1,
                     sel and gc(g) or Color3.fromRGB(28,28,38))
                 gradebtn.MouseButton1Click:Connect(function()
@@ -1445,50 +1443,75 @@ local function setWizStep(s)
         })
         subLbl.TextWrapped=true; subLbl.LayoutOrder=1
 
+        -- Search bar
+        local skinSearchBox=Instance.new("TextBox")
+        skinSearchBox.BackgroundColor3=Color3.fromRGB(20,20,32)
+        skinSearchBox.BorderSizePixel=0
+        skinSearchBox.Size=UDim2.new(1,-28,0,30)
+        skinSearchBox.Font=Enum.Font.GothamSemibold; skinSearchBox.TextSize=11
+        skinSearchBox.TextColor3=Color3.fromRGB(170,170,200)
+        skinSearchBox.PlaceholderText="Search skins..."
+        skinSearchBox.PlaceholderColor3=Color3.fromRGB(48,48,72)
+        skinSearchBox.Text=""; skinSearchBox.ClearTextOnFocus=false
+        skinSearchBox.TextXAlignment=Enum.TextXAlignment.Left
+        skinSearchBox.LayoutOrder=2; skinSearchBox.ZIndex=24; skinSearchBox.Parent=wizScroll
+        addCorner(skinSearchBox,6); addStroke(skinSearchBox,1,Color3.fromRGB(34,34,54))
+        addPadding(skinSearchBox,8)
+
         -- Single-column list: skin name left, stand name right (HTML style)
         local skinList=newFrame(wizScroll,{
             BackgroundTransparency=1,
             Size=UDim2.new(1,-28,0,0), ZIndex=23,
         })
         skinList.AutomaticSize=Enum.AutomaticSize.Y
-        skinList.LayoutOrder=2
+        skinList.LayoutOrder=3
         addListLayout(skinList, 3)
 
-        for _, sk in ipairs(SKIN_LIST) do
-            local sel=table.find(wData.skins,sk.name)~=nil
-            local skn=sk.name; local sts=sk.stand
-            local row=newButton(skinList,{
-                BackgroundColor3=sel and Color3.fromRGB(22,10,36) or Color3.fromRGB(19,19,28),
-                Size=UDim2.new(1,0,0,30),
-                Text="", ZIndex=24,
-            })
-            addCorner(row,6)
-            addStroke(row,1, sel and Color3.fromRGB(102,51,170) or Color3.fromRGB(28,28,42))
-            -- skin name — left
-            newLabel(row,{
-                Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
-                Font=Enum.Font.GothamSemibold, TextSize=11,
-                TextColor3=sel and Color3.fromRGB(187,136,238) or C.textDim,
-                TextXAlignment=Enum.TextXAlignment.Left,
-                Text=skn, ZIndex=25,
-            })
-            -- stand name — right
-            newLabel(row,{
-                AnchorPoint=Vector2.new(1,0.5),
-                Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.38,0,1,0),
-                Font=Enum.Font.Code, TextSize=9,
-                TextColor3=sel and Color3.fromRGB(136,85,187) or C.textFaint,
-                TextXAlignment=Enum.TextXAlignment.Right,
-                Text=sts, ZIndex=25,
-            })
-            row.MouseButton1Click:Connect(function()
-                local idx=table.find(wData.skins,skn)
-                if idx then table.remove(wData.skins,idx)
-                else table.insert(wData.skins,skn) end
-                setWizStep(1)
-            end)
+        local function rebuildSkinList(filter)
+            skinList:ClearAllChildren()
+            addListLayout(skinList, 3)
+            local f = filter:lower()
+            for _, sk in ipairs(SKIN_LIST) do
+                if f=="" or sk.name:lower():find(f, 1, true) then
+                    local sel=table.find(wData.skins,sk.name)~=nil
+                    local skn=sk.name
+                    local row=newButton(skinList,{
+                        BackgroundColor3=sel and Color3.fromRGB(22,10,36) or Color3.fromRGB(19,19,28),
+                        Size=UDim2.new(1,0,0,30), Text="", ZIndex=24,
+                    })
+                    addCorner(row,6)
+                    addStroke(row,1, sel and Color3.fromRGB(102,51,170) or Color3.fromRGB(28,28,42))
+                    local skinLabel = skn:match("^(.-)%s*%(") or skn
+                    local standLabel = skn:match("%((.-)%)") or ""
+                    newLabel(row,{
+                        Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
+                        Font=Enum.Font.GothamSemibold, TextSize=11,
+                        TextColor3=sel and Color3.fromRGB(187,136,238) or C.textDim,
+                        TextXAlignment=Enum.TextXAlignment.Left,
+                        Text=skinLabel, ZIndex=25,
+                    })
+                    newLabel(row,{
+                        AnchorPoint=Vector2.new(1,0.5),
+                        Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.38,0,1,0),
+                        Font=Enum.Font.Code, TextSize=9,
+                        TextColor3=sel and Color3.fromRGB(136,85,187) or C.textFaint,
+                        TextXAlignment=Enum.TextXAlignment.Right,
+                        Text=standLabel, ZIndex=25,
+                    })
+                    row.MouseButton1Click:Connect(function()
+                        local i=table.find(wData.skins,skn)
+                        if i then table.remove(wData.skins,i)
+                        else table.insert(wData.skins,skn) end
+                        rebuildSkinList(skinSearchBox.Text)
+                    end)
+                end
+            end
         end
-        wizNextBtn.Text="Next \xe2\x86\x92"
+        skinSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            rebuildSkinList(skinSearchBox.Text)
+        end)
+        rebuildSkinList("")
+                wizNextBtn.Text="Next \xe2\x86\x92"
 
     elseif s==2 then
         -- STEP 3: Trait multi-select chips
@@ -1578,14 +1601,28 @@ end)
 
 addCondBtn.MouseButton1Click:Connect(function()
     wData={stands={},minStr="A",minSpd="A",minSpc="A",skins={},traits={}}
+    setWizStep(0)
     task.defer(function()
+        local vp = workspace.CurrentCamera.ViewportSize
         local hp = hudHolder.AbsolutePosition
         local hs = hudHolder.AbsoluteSize
         if hp.X == 0 and hp.Y == 0 then
-            local vp = workspace.CurrentCamera.ViewportSize
-            hp = Vector2.new(vp.X/2 - 170, math.max(20, vp.Y/2 - 240))
+            hp = Vector2.new(20, vp.Y/2 - 100)
+            hs = Vector2.new(CARD_W, 200)
         end
-        wizWin.Position = UDim2.new(0, hp.X + hs.X + 10, 0, hp.Y)
+        local ww = wizWin.AbsoluteSize.X > 0 and wizWin.AbsoluteSize.X or 340
+        local wh = wizWin.AbsoluteSize.Y > 0 and wizWin.AbsoluteSize.Y or 480
+        -- Side based on HUD position, same logic as openSubWin
+        local hudCentreX = hp.X + hs.X * 0.5
+        local xPos
+        if hudCentreX < vp.X * 0.5 then
+            xPos = hp.X + hs.X + 10
+        else
+            xPos = hp.X - ww - 10
+        end
+        xPos = math.max(4, math.min(xPos, vp.X - ww - 4))
+        local yPos = math.max(4, math.min(hp.Y, vp.Y - wh - 4))
+        wizWin.Position = UDim2.new(0, xPos, 0, yPos)
         wizWin.Visible  = true
     end)
     setWizStep(0)
