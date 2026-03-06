@@ -611,43 +611,23 @@ end
 local settingsWin, settingsStroke, settingsCloseBtn = makeSubWin("Settings",290,290)
 
 -- scrollable body
--- Settings uses a plain frame; top group absolute top, bottom group absolute bottom
-local settingsScroll=newFrame(settingsWin,{
-    BackgroundTransparency=1,
-    Position=UDim2.new(0,0,0,37),
-    Size=UDim2.new(1,0,1,-37), ZIndex=21,
-})
+local settingsScroll=Instance.new("ScrollingFrame")
+settingsScroll.BackgroundTransparency=1; settingsScroll.BorderSizePixel=0
+settingsScroll.Position=UDim2.new(0,0,0,37)
+settingsScroll.Size=UDim2.new(1,0,1,-37)
+settingsScroll.CanvasSize=UDim2.new(0,0,0,0)
+settingsScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+settingsScroll.ScrollBarThickness=3
+settingsScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
+settingsScroll.ZIndex=22; settingsScroll.Parent=settingsWin
 do
     local p=Instance.new("UIPadding")
     p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
     p.PaddingTop=UDim.new(0,10);  p.PaddingBottom=UDim.new(0,10)
     p.Parent=settingsScroll
 end
--- Top group via list layout frame
-local settingsTop=newFrame(settingsScroll,{
-    BackgroundTransparency=1,
-    Position=UDim2.new(0,0,0,0),
-    Size=UDim2.new(1,0,0,0), ZIndex=22,
-})
-settingsTop.AutomaticSize=Enum.AutomaticSize.Y
-addListLayout(settingsTop,6)
--- Bottom group anchored to bottom
-local settingsBottom=newFrame(settingsScroll,{
-    BackgroundTransparency=1,
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,0,1,0),
-    Size=UDim2.new(1,0,0,0), ZIndex=22,
-})
-settingsBottom.AutomaticSize=Enum.AutomaticSize.Y
--- reverse list (items stack upward from anchor)
-local sbLayout=Instance.new("UIListLayout")
-sbLayout.FillDirection=Enum.FillDirection.Vertical
-sbLayout.VerticalAlignment=Enum.VerticalAlignment.Bottom
-sbLayout.Padding=UDim.new(0,6)
-sbLayout.SortOrder=Enum.SortOrder.LayoutOrder
-sbLayout.Parent=settingsBottom
--- alias so all subsequent sectionLabel/row calls go to right parent
-local settingsScroll=settingsTop
+addListLayout(settingsScroll,6)
+local settingsBottom=settingsScroll  -- alias for ROLL section
 
 -- ── helper: section label ──
 local function sectionLabel(parent, text, order)
@@ -764,14 +744,14 @@ addCorner(addCondBtn,7)
 addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
 
 -- ROLL section — anchored to bottom of settings window
-sectionLabel(settingsBottom,"ROLL",1)
-local delayRow=newFrame(settingsBottom,{
+sectionLabel(settingsScroll,"ROLL",5)
+local delayRow=newFrame(settingsScroll,{
     BackgroundColor3=C.rowBg,
     Size=UDim2.new(1,0,0,32), ZIndex=23,
 })
 addCorner(delayRow,7)
 addStroke(delayRow,1,C.rowBorder)
-delayRow.LayoutOrder=2
+delayRow.LayoutOrder=6
 newLabel(delayRow,{
     Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
     Font=Enum.Font.GothamSemibold, TextSize=11,
@@ -802,7 +782,7 @@ local setGlobalStop = function() end
 -- ── WEBHOOK WINDOW ───────────────────────────────────────────
 local webhookWin, webhookStroke, webhookCloseBtn = makeSubWin("Webhook",290,340)
 
-local wOuter=newFrame(webhookWin,{
+local wBody=newFrame(webhookWin,{
     BackgroundTransparency=1,
     Position=UDim2.new(0,0,0,37),
     Size=UDim2.new(1,0,1,-37), ZIndex=21,
@@ -811,30 +791,10 @@ do
     local p=Instance.new("UIPadding")
     p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
     p.PaddingTop=UDim.new(0,10);  p.PaddingBottom=UDim.new(0,10)
-    p.Parent=wOuter
+    p.Parent=wBody
 end
--- Top group
-local wBody=newFrame(wOuter,{
-    BackgroundTransparency=1,
-    Position=UDim2.new(0,0,0,0),
-    Size=UDim2.new(1,0,0,0), ZIndex=22,
-})
-wBody.AutomaticSize=Enum.AutomaticSize.Y
 addListLayout(wBody,6)
--- Bottom group anchored to bottom
-local wBottom=newFrame(wOuter,{
-    BackgroundTransparency=1,
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,0,1,0),
-    Size=UDim2.new(1,0,0,0), ZIndex=22,
-})
-wBottom.AutomaticSize=Enum.AutomaticSize.Y
-local wbLayout=Instance.new("UIListLayout")
-wbLayout.FillDirection=Enum.FillDirection.Vertical
-wbLayout.VerticalAlignment=Enum.VerticalAlignment.Bottom
-wbLayout.Padding=UDim.new(0,6)
-wbLayout.SortOrder=Enum.SortOrder.LayoutOrder
-wbLayout.Parent=wBottom
+local wBottom=wBody  -- alias
 
 sectionLabel(wBody,"DISCORD WEBHOOK URL",1)
 
@@ -861,9 +821,9 @@ local testBtn=newButton(wBody,{
 testBtn.LayoutOrder=3
 addCorner(testBtn,7); addStroke(testBtn,1.5,Color3.fromRGB(30,30,56))
 
-sectionLabel(wBottom,"NOTIFY ON",0)
-local _,getWHJackpot  = makeToggleRow(wBottom,"Jackpot",true,2)
-local _,getWHCond     = makeToggleRow(wBottom,"Condition Met",true,1)
+sectionLabel(wBody,"NOTIFY ON",4)
+local _,getWHJackpot  = makeToggleRow(wBody,"Jackpot",true,5)
+local _,getWHCond     = makeToggleRow(wBody,"Condition Met",true,6)
 
 -- sync settings from toggles each frame
 table.insert(connections, RunService.Heartbeat:Connect(function()
