@@ -1,6 +1,6 @@
 --[[
   StandRollHUD_v3  —  LocalScript  →  StarterPlayerScripts
-  Kill: Y key  or  ✕ button N
+  Kill: Y key  or  ✕ button
   
   CONDITIONS structure:
     { stands={string}, minStr, minSpd, minSpc, skins={string}, traits={string} }
@@ -966,6 +966,10 @@ local function applyConfig(cfg)
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
         cfgNameBox.Text = cfg.webhookURL
     end
+    -- ensure condition list is visible after loading
+    condListContainer.Visible = true
+    condListOpen = true
+    condChevBtn.Text = "â¼"
     renderConditions()
 end
 
