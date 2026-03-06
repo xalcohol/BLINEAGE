@@ -201,9 +201,24 @@ local function checkStop(info)
     local allS       = g.str=="S" and g.spd=="S" and g.spc=="S"
     local traitLower = info.trait:lower()
 
-    -- Global jackpot: Transcendent + all S
-    if Settings.globalStop and allS and traitLower=="transcendent" then
-        return "GLOBAL_JACKPOT"
+    -- Global jackpot: all S + selected skin + mythical trait
+    local MYTHICAL_TRAITS = {"transcendent","feral","demonic"}
+    local isMythical = false
+    for _, mt in ipairs(MYTHICAL_TRAITS) do
+        if traitLower == mt then isMythical=true; break end
+    end
+    if Settings.globalStop and allS and isMythical and info.skin then
+        -- skin must be one we have selected in any condition
+        local skinSelected = false
+        for _, cond in ipairs(Conditions) do
+            for _, s in ipairs(cond.skins or {}) do
+                if info.skin:lower():find(s:lower(), 1, true) then
+                    skinSelected=true; break
+                end
+            end
+            if skinSelected then break end
+        end
+        if skinSelected then return "GLOBAL_JACKPOT" end
     end
 
     for _, cond in ipairs(Conditions) do
@@ -211,33 +226,48 @@ local function checkStop(info)
         if info.skin and #(cond.skins or {}) > 0 then
             for _, s in ipairs(cond.skins) do
                 if info.skin:lower():find(s:lower(), 1, true) then
-                    return allS and "CONDITION_JACKPOT" or "CONDITION_SKIN"
+                    -- skin + trait + stats met = jackpot
+                    local skinStatsMatch = gradeGE(g.str, cond.minStr)
+                        and gradeGE(g.spd, cond.minSpd)
+                        and gradeGE(g.spc, cond.minSpc)
+                    local skinTraitMatch = #(cond.traits or {}) > 0 and (function()
+                        for _, tr in ipairs(cond.traits) do
+                            if traitLower == tr:lower() then return true end
+                        end
+                        return false
+                    end)()
+                    if skinTraitMatch and skinStatsMatch then
+                        return "CONDITION_JACKPOT"
+                    end
+                    return "CONDITION_SKIN"
                 end
             end
         end
 
-        -- Step 1: stand match
         local standMatch = false
         for _, sn in ipairs(cond.stands or {}) do
             if info.name == sn then standMatch=true; break end
         end
 
-        -- Stats: minimum grade and above
-        local statsMatch = gradeGE(g.str, cond.minStr)
-            and gradeGE(g.spd, cond.minSpd)
-            and gradeGE(g.spc, cond.minSpc)
+        if standMatch then
+            local statsMatch = gradeGE(g.str, cond.minStr)
+                and gradeGE(g.spd, cond.minSpd)
+                and gradeGE(g.spc, cond.minSpc)
 
-        if standMatch and statsMatch then
-            -- Step 3: trait also matches — best result
+            -- Step 3: stand + trait match, stats irrelevant
             if #(cond.traits or {}) > 0 then
                 for _, tr in ipairs(cond.traits) do
                     if traitLower == tr:lower() then
-                        return "CONDITION_TRAIT"
+                        -- stand + stats + trait = jackpot
+                        return statsMatch and "CONDITION_JACKPOT" or "CONDITION_TRAIT"
                     end
                 end
             end
-            -- Step 1 alone: stand + stats met, trait irrelevant
-            return "CONDITION_MET"
+
+            -- Step 1: stand + stats meet minimum (no trait requirement)
+            if statsMatch then
+                return "CONDITION_MET"
+            end
         end
     end
     return nil
