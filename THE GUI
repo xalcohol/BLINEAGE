@@ -1053,6 +1053,9 @@ local function renderConfigList()
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         loadBtn.MouseButton1Click:Connect(function()
             applyConfig(savedConfigs[ci].data)
+            -- sync condition list visibility so it shows immediately
+            condListContainer.Visible = true
+            condListOpen = true
         end)
 
         -- S = overwrite this slot with current settings
