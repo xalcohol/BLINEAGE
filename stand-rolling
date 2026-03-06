@@ -49,6 +49,28 @@ local SPECIAL_STANDS = {
 	["King Crimson"] = true,
 }
 
+-- Skins that stop autoroll regardless of which stand they're on
+local GALAXY_SKINS = {
+	["Galaxy Garou"] = true,
+}
+
+-- Skins that stop autoroll only when found on their specific stand
+-- Uses substring match so partial names work if the game adds prefixes/suffixes
+local TARGET_SKINS = {
+	["Killer Queen"] = {
+		"Bomb Devil",
+		"One Who Laughs",
+	},
+	["King Crimson"] = {
+		"Deimos",
+		"Igris",
+		"Kawaii",
+	},
+	["White Snake"] = {
+		"Ryuk",
+	},
+}
+
 --========================
 -- Helpers
 --========================
@@ -547,9 +569,42 @@ local function updateHUD()
 
 		if legendaryFlashActive then triggerFlash() end
 
-		local allS = grades.strength == "S" and grades.speed == "S" and grades.specialty == "S"
-		if autoroll and specialStandActive       then stopAutoroll("SPECIAL") end
-		if autoroll and STOP_ON_ALL_S and allS   then stopAutoroll("ALL_S")   end
+		local skin        = info.skin or ""
+		local standName   = info.name
+		local allS        = grades.strength == "S" and grades.speed == "S" and grades.specialty == "S"
+		local isTranscendent = info.trait:lower() == "transcendent"
+
+		-- Check if current skin is in the target skin list
+		-- Galaxy Garou stops regardless of stand; all others require their specific stand
+		local isTargetSkin = false
+		if GALAXY_SKINS[skin] then
+			isTargetSkin = true
+		elseif TARGET_SKINS[standName] then
+			for _, s in ipairs(TARGET_SKINS[standName]) do
+				if skin:lower():find(s:lower(), 1, true) then
+					isTargetSkin = true
+					break
+				end
+			end
+		end
+
+		-- Stop conditions (all require special stand EXCEPT isTargetSkin which has its own rule)
+		if autoroll then
+			if isTargetSkin then
+				-- Jackpot if target skin AND all S
+				if allS then
+					stopAutoroll("JACKPOT")
+				else
+					stopAutoroll("TARGET_SKIN")
+				end
+			elseif specialStandActive then
+				if isTranscendent then
+					stopAutoroll("TRANSCENDENT")
+				elseif STOP_ON_ALL_S and allS then
+					stopAutoroll("ALL_S")
+				end
+			end
+		end
 	end
 end
 
@@ -646,12 +701,18 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
 		autoBtn.TextColor3       = Color3.fromRGB(160, 160, 175)
 		autoBtn.Text             = "AUTO  OFF"
 
-		if stopReason == "SPECIAL" then
-			statusLabel.Text       = "★  stopped — special"
-			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-		elseif stopReason == "ALL_S" then
-			statusLabel.Text       = "◆  stopped — all S"
+		if stopReason == "JACKPOT" then
+			statusLabel.Text       = "✦  jackpot!"
 			statusLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
+		elseif stopReason == "TRANSCENDENT" then
+			statusLabel.Text       = "★  transcendent"
+			statusLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
+		elseif stopReason == "ALL_S" then
+			statusLabel.Text       = "◆  all S"
+			statusLabel.TextColor3 = Color3.fromRGB(255, 200, 60)
+		elseif stopReason == "TARGET_SKIN" then
+			statusLabel.Text       = "◈  rare skin"
+			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
 		elseif stopReason == "MANUAL" then
 			statusLabel.Text       = "stopped"
 			statusLabel.TextColor3 = Color3.fromRGB(80, 80, 95)
