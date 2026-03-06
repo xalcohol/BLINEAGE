@@ -1170,7 +1170,9 @@ local function renderConfigList()
             Text="", ZIndex=26,
         })
         rowClickBtn.MouseButton1Click:Connect(function()
-            selectedConfig = (selectedConfig==ci) and nil or ci
+            -- clicking row sets/unsets autoload for this config
+            autoloadName = (autoloadName==savedConfigs[ci].name) and nil or savedConfigs[ci].name
+            persistConfigs()
             renderConfigList()
         end)
 
@@ -1386,23 +1388,10 @@ renderConditions()
 local function checkCurrentStand()
     if #Conditions == 0 then return end
     local info = parseStand(StandValue.Value)
-    if info.name == "Unknown" then return end
+    if info.name == "Unknown" or info.name == "" then return end
     local result = checkStop(info)
     if result then
-        stopReason = result
-        -- update status label colours to match
-        local sc = C.textFaint
-        if     result=="GLOBAL_JACKPOT" or result=="CONDITION_JACKPOT" then sc=C.gold
-        elseif result=="CONDITION_TRAIT"   then sc=C.purple
-        elseif result=="CONDITION_MET"     then sc=C.gradeA
-        elseif result=="CONDITION_SKIN"    then sc=C.red
-        end
-        statusLabel.TextColor3 = sc
-        if     result=="GLOBAL_JACKPOT" or result=="CONDITION_JACKPOT" then statusLabel.Text="â¦  jackpot!"
-        elseif result=="CONDITION_TRAIT"   then statusLabel.Text="â  trait match"
-        elseif result=="CONDITION_MET"     then statusLabel.Text="â  condition met"
-        elseif result=="CONDITION_SKIN"    then statusLabel.Text="â  rare skin"
-        end
+        stopReason = result  -- render loop picks this up every frame
     end
 end
 
@@ -1860,7 +1849,8 @@ local function setWizStep(s)
                     local hudX = hudHolder.AbsolutePosition.X + hudHolder.AbsoluteSize.X * 0.5
                     local onRight = hudX > screenW * 0.5
                     local px = onRight and (x - tipW - 6) or (x + 14)
-                    traitTip.Position=UDim2.new(0,px,0,y+14)
+                    local tipH=traitTip.AbsoluteSize.Y>0 and traitTip.AbsoluteSize.Y or 26
+                    traitTip.Position=UDim2.new(0,px,0,y-tipH-6)
                     traitTip.Visible=true
                 end)
                 chip.MouseMoved:Connect(function(x,y)
@@ -1869,7 +1859,8 @@ local function setWizStep(s)
                     local hudX = hudHolder.AbsolutePosition.X + hudHolder.AbsoluteSize.X * 0.5
                     local onRight = hudX > screenW * 0.5
                     local px = onRight and (x - tipW - 6) or (x + 14)
-                    traitTip.Position=UDim2.new(0,px,0,y+14)
+                    local tipH=traitTip.AbsoluteSize.Y>0 and traitTip.AbsoluteSize.Y or 26
+                    traitTip.Position=UDim2.new(0,px,0,y-tipH-6)
                 end)
                 chip.MouseButton1Click:Connect(function()
                     traitTip.Visible=false
