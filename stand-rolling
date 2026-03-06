@@ -966,10 +966,6 @@ local function applyConfig(cfg)
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
         cfgNameBox.Text = cfg.webhookURL
     end
-    -- ensure condition list is visible after loading
-    condListContainer.Visible = true
-    condListOpen = true
-    condChevBtn.Text = "â¼"
     renderConditions()
 end
 
@@ -1153,6 +1149,12 @@ local function renderConditions()
     condListContainer:ClearAllChildren()
     addListLayout(condListContainer,3)
     condCountLbl.Text = #Conditions.." active"
+    -- auto-open list whenever there are conditions
+    if #Conditions > 0 then
+        condListContainer.Visible = true
+        condListOpen = true
+        condChevBtn.Text = "â¼"
+    end
 
     for i, cond in ipairs(Conditions) do
         local item=newFrame(condListContainer,{
