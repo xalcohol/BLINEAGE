@@ -1196,7 +1196,10 @@ local function renderConfigList()
             applyConfig(data)
             selectedConfig = ci
             renderConfigList()
-            checkCurrentStand()
+            -- re-evaluate with new conditions; reset to IDLE if nothing matches
+            local info = parseStand(StandValue.Value)
+            local reason = (info.name ~= "Unknown") and checkStop(info) or nil
+            stopReason = reason or "IDLE" 
         end)
 
         local saveBtn2=newButton(row,{
@@ -2084,6 +2087,10 @@ local function updateHUD()
                 triggerFlash()
             end
         end
+    else
+        -- stand changed manually — re-evaluate and update status display
+        local reason = checkStop(info)
+        stopReason = reason or "IDLE"
     end
 end
 
