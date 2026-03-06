@@ -763,14 +763,14 @@ addCorner(addCondBtn,7)
 addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
 
 -- ROLL section — anchored to bottom of settings window
-sectionLabel(settingsBottom,"ROLL",2)
+sectionLabel(settingsBottom,"ROLL",1)
 local delayRow=newFrame(settingsBottom,{
     BackgroundColor3=C.rowBg,
     Size=UDim2.new(1,0,0,32), ZIndex=23,
 })
 addCorner(delayRow,7)
 addStroke(delayRow,1,C.rowBorder)
-delayRow.LayoutOrder=1
+delayRow.LayoutOrder=2
 newLabel(delayRow,{
     Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
     Font=Enum.Font.GothamSemibold, TextSize=11,
@@ -848,10 +848,9 @@ local testBtn=newButton(wBody,{
 testBtn.LayoutOrder=3
 addCorner(testBtn,7); addStroke(testBtn,1.5,Color3.fromRGB(30,30,56))
 
-sectionLabel(wBottom,"NOTIFY ON",3)
+sectionLabel(wBottom,"NOTIFY ON",0)
 local _,getWHJackpot  = makeToggleRow(wBottom,"Jackpot",true,2)
 local _,getWHCond     = makeToggleRow(wBottom,"Condition Met",true,1)
-local _,getWHGlobal   = makeToggleRow(wBottom,"Global Stop",false,0)
 
 -- sync settings from toggles each frame
 table.insert(connections, RunService.Heartbeat:Connect(function()
@@ -859,7 +858,6 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
     Settings.webhookURL         = urlBox.Text
     Settings.webhookOnJackpot   = getWHJackpot()
     Settings.webhookOnCondition = getWHCond()
-    Settings.webhookOnGlobal    = getWHGlobal()
 end))
 
 -- ═══════════════════════════════════════════════════════════
@@ -1398,23 +1396,24 @@ local function setWizStep(s)
             local sn=standName
             local unavail=UNAVAILABLE_STANDS[sn]==true
             local btn=newButton(grid,{
-                BackgroundColor3=Color3.fromRGB(17,17,24), -- always black bg
+                BackgroundColor3=unavail and Color3.fromRGB(17,17,24)
+                    or sel and Color3.fromRGB(20,20,42)
+                    or Color3.fromRGB(20,20,32),
                 Size=UDim2.new(0,1,0,1), -- overridden by grid layout
-                Font=unavail and Enum.Font.GothamBold or Enum.Font.GothamSemibold,
-                TextSize=11,
-                TextColor3=unavail and Color3.fromRGB(200,200,200)  -- white on unavail
+                Font=Enum.Font.GothamSemibold, TextSize=11,
+                TextColor3=unavail and Color3.fromRGB(200,200,200)
                     or sel and Color3.fromRGB(170,170,238)
                     or C.textDim,
                 Text=sn, ZIndex=24,
             })
             addCorner(btn,7)
             addStroke(btn,1.5,
-                unavail and Color3.fromRGB(140,35,35)   -- subtle red border only
+                unavail and Color3.fromRGB(140,35,35)
                 or sel and Color3.fromRGB(85,85,170)
                 or Color3.fromRGB(30,30,48))
             if unavail then
                 btn.MouseEnter:Connect(function()
-                    btn.TextColor3=Color3.fromRGB(220,80,80)  -- red tint on hover hint
+                    btn.TextColor3=Color3.fromRGB(220,80,80)
                 end)
                 btn.MouseLeave:Connect(function()
                     btn.TextColor3=Color3.fromRGB(200,200,200)
