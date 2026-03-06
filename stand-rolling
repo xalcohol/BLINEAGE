@@ -720,6 +720,12 @@ local condChevBtn=newButton(condHeaderRow,{
     BackgroundTransparency=1, Font=Enum.Font.GothamBold,
     TextSize=9, TextColor3=C.textMuted, Text="\xe2\x96\xbc", ZIndex=25,
 })
+local condRefreshBtn=newButton(condHeaderRow,{
+    AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-30,0.5,0), Size=UDim2.new(0,18,0,18),
+    BackgroundTransparency=1, Font=Enum.Font.GothamBold,
+    TextSize=11, TextColor3=C.textMuted, Text="\xe2\x86\xbb", ZIndex=25,
+})
 
 -- conditions list container (shown/hidden)
 local condListContainer=newFrame(settingsScroll,{
@@ -743,30 +749,15 @@ addCondBtn.LayoutOrder=4
 addCorner(addCondBtn,7)
 addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
 
--- Refresh conditions button
-local refreshBtn=newButton(settingsScroll,{
-    BackgroundColor3=Color3.fromRGB(17,17,32),
-    Size=UDim2.new(1,0,0,28), ZIndex=23,
-    Font=Enum.Font.GothamSemibold, TextSize=11,
-    TextColor3=Color3.fromRGB(80,80,120), Text="â»  Refresh",
-})
-refreshBtn.LayoutOrder=5
-addCorner(refreshBtn,7)
-addStroke(refreshBtn,1,Color3.fromRGB(30,30,48))
-refreshBtn.MouseButton1Click:Connect(function()
-    if not condListOpen then toggleCondList() end
-    renderConditions()
-end)
-
 -- ROLL section — anchored to bottom of settings window
-sectionLabel(settingsScroll,"ROLL",6)
+sectionLabel(settingsScroll,"ROLL",5)
 local delayRow=newFrame(settingsScroll,{
     BackgroundColor3=C.rowBg,
     Size=UDim2.new(1,0,0,32), ZIndex=23,
 })
 addCorner(delayRow,7)
 addStroke(delayRow,1,C.rowBorder)
-delayRow.LayoutOrder=7
+delayRow.LayoutOrder=6
 newLabel(delayRow,{
     Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
     Font=Enum.Font.GothamSemibold, TextSize=11,
@@ -962,95 +953,6 @@ local function serializeConfig()
     }
 end
 
-local function renderConditions()
-    condListContainer:ClearAllChildren()
-    addListLayout(condListContainer,3)
-    condCountLbl.Text = #Conditions.." active"
-
-    for i, cond in ipairs(Conditions) do
-        local item=newFrame(condListContainer,{
-            BackgroundColor3=Color3.fromRGB(19,19,24),
-            Size=UDim2.new(1,0,0,58), ZIndex=24,
-        })
-        addCorner(item,6)
-        addStroke(item,1,Color3.fromRGB(25,25,38))
-        item.LayoutOrder=i
-
-        -- dot
-        local dot=newFrame(item,{
-            BackgroundColor3=condColor(cond.stands),
-            Position=UDim2.new(0,8,0.5,-3),
-            Size=UDim2.new(0,6,0,6), ZIndex=25,
-        })
-        addCorner(dot,100)
-
-        -- name
-        local standText = (#(cond.stands or {})>1)
-            and (#cond.stands.." stands")
-            or ((cond.stands or {"?"})[1])
-        newLabel(item,{
-            Position=UDim2.new(0,20,0,6), Size=UDim2.new(0.5,0,0,20),
-            Font=Enum.Font.GothamSemibold, TextSize=11,
-            TextColor3=C.textDim, Text=standText, ZIndex=25,
-        })
-
-        -- tags
-        local tagRow=newFrame(item,{
-            BackgroundTransparency=1,
-            Position=UDim2.new(0,20,0,30),
-            Size=UDim2.new(1,-50,0,16), ZIndex=25,
-        })
-        local tagLayout=Instance.new("UIListLayout")
-        tagLayout.FillDirection=Enum.FillDirection.Horizontal
-        tagLayout.Padding=UDim.new(0,4)
-        tagLayout.SortOrder=Enum.SortOrder.LayoutOrder
-        tagLayout.Parent=tagRow
-
-        local function makeTag(text, bgColor, txtColor, order)
-            local t=newLabel(tagRow,{
-                Size=UDim2.new(0,0,0,16),
-                Font=Enum.Font.GothamBold, TextSize=9,
-                TextColor3=txtColor, Text=text,
-                BackgroundTransparency=0,
-                ZIndex=26,
-            })
-            t.BackgroundColor3=bgColor
-            t.AutomaticSize=Enum.AutomaticSize.X
-            t.LayoutOrder=order
-            addCorner(t,4)
-            addPadding(t,5)
-            return t
-        end
-
-        makeTag(cond.minStr.."/"..cond.minSpd.."/"..cond.minSpc,
-            Color3.fromRGB(42,30,4), Color3.fromRGB(170,128,32), 1)
-        if #(cond.skins or {})>0 then
-            makeTag(#cond.skins.." skin"..(#cond.skins>1 and "s" or ""),
-                Color3.fromRGB(26,10,32), Color3.fromRGB(136,68,170), 2)
-        end
-        if #(cond.traits or {})>0 then
-            makeTag(table.concat(cond.traits,", "),
-                Color3.fromRGB(8,24,32), Color3.fromRGB(34,136,170), 3)
-        end
-
-        -- delete button
-        local delBtn=newButton(item,{
-            AnchorPoint=Vector2.new(1,0.5),
-            Position=UDim2.new(1,-6,0.5,0),
-            Size=UDim2.new(0,18,0,18),
-            BackgroundTransparency=1,
-            Font=Enum.Font.GothamBold, TextSize=12,
-            TextColor3=Color3.fromRGB(42,24,24), Text="x", ZIndex=26,
-        })
-        local idx=i
-        delBtn.MouseButton1Click:Connect(function()
-            table.remove(Conditions, idx)
-            renderConditions()
-        end)
-    end
-end
-
-
 local function applyConfig(cfg)
     -- Restore conditions
     Conditions = {}
@@ -1158,7 +1060,7 @@ local function renderConfigList()
         })
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         loadBtn.MouseButton1Click:Connect(function()
-            -- mutate Conditions in place so all closures see the update
+            -- mutate Conditions in place so renderConditions sees the update
             while #Conditions > 0 do table.remove(Conditions) end
             for _, c in ipairs((savedConfigs[ci].data.conditions) or {}) do
                 table.insert(Conditions, {
@@ -1167,9 +1069,8 @@ local function renderConfigList()
                     skins=c.skins or {}, traits=c.traits or {},
                 })
             end
+            condListContainer.Visible=true; condListOpen=true
             renderConditions()
-            -- open the list if it's currently closed
-            if not condListOpen then toggleCondList() end
         end)
 
         -- S = overwrite slot
@@ -1261,6 +1162,93 @@ local function condColor(stands)
     return COND_COLORS[h+1]
 end
 
+local function renderConditions()
+    condListContainer:ClearAllChildren()
+    addListLayout(condListContainer,3)
+    condCountLbl.Text = #Conditions.." active"
+
+    for i, cond in ipairs(Conditions) do
+        local item=newFrame(condListContainer,{
+            BackgroundColor3=Color3.fromRGB(19,19,24),
+            Size=UDim2.new(1,0,0,58), ZIndex=24,
+        })
+        addCorner(item,6)
+        addStroke(item,1,Color3.fromRGB(25,25,38))
+        item.LayoutOrder=i
+
+        -- dot
+        local dot=newFrame(item,{
+            BackgroundColor3=condColor(cond.stands),
+            Position=UDim2.new(0,8,0.5,-3),
+            Size=UDim2.new(0,6,0,6), ZIndex=25,
+        })
+        addCorner(dot,100)
+
+        -- name
+        local standText = (#(cond.stands or {})>1)
+            and (#cond.stands.." stands")
+            or ((cond.stands or {"?"})[1])
+        newLabel(item,{
+            Position=UDim2.new(0,20,0,6), Size=UDim2.new(0.5,0,0,20),
+            Font=Enum.Font.GothamSemibold, TextSize=11,
+            TextColor3=C.textDim, Text=standText, ZIndex=25,
+        })
+
+        -- tags
+        local tagRow=newFrame(item,{
+            BackgroundTransparency=1,
+            Position=UDim2.new(0,20,0,30),
+            Size=UDim2.new(1,-50,0,16), ZIndex=25,
+        })
+        local tagLayout=Instance.new("UIListLayout")
+        tagLayout.FillDirection=Enum.FillDirection.Horizontal
+        tagLayout.Padding=UDim.new(0,4)
+        tagLayout.SortOrder=Enum.SortOrder.LayoutOrder
+        tagLayout.Parent=tagRow
+
+        local function makeTag(text, bgColor, txtColor, order)
+            local t=newLabel(tagRow,{
+                Size=UDim2.new(0,0,0,16),
+                Font=Enum.Font.GothamBold, TextSize=9,
+                TextColor3=txtColor, Text=text,
+                BackgroundTransparency=0,
+                ZIndex=26,
+            })
+            t.BackgroundColor3=bgColor
+            t.AutomaticSize=Enum.AutomaticSize.X
+            t.LayoutOrder=order
+            addCorner(t,4)
+            addPadding(t,5)
+            return t
+        end
+
+        makeTag(cond.minStr.."/"..cond.minSpd.."/"..cond.minSpc,
+            Color3.fromRGB(42,30,4), Color3.fromRGB(170,128,32), 1)
+        if #(cond.skins or {})>0 then
+            makeTag(#cond.skins.." skin"..(#cond.skins>1 and "s" or ""),
+                Color3.fromRGB(26,10,32), Color3.fromRGB(136,68,170), 2)
+        end
+        if #(cond.traits or {})>0 then
+            makeTag(table.concat(cond.traits,", "),
+                Color3.fromRGB(8,24,32), Color3.fromRGB(34,136,170), 3)
+        end
+
+        -- delete button
+        local delBtn=newButton(item,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-6,0.5,0),
+            Size=UDim2.new(0,18,0,18),
+            BackgroundTransparency=1,
+            Font=Enum.Font.GothamBold, TextSize=12,
+            TextColor3=Color3.fromRGB(42,24,24), Text="x", ZIndex=26,
+        })
+        local idx=i
+        delBtn.MouseButton1Click:Connect(function()
+            table.remove(Conditions, idx)
+            renderConditions()
+        end)
+    end
+end
 
 local function toggleCondList()
     condListOpen = not condListOpen
@@ -1268,6 +1256,10 @@ local function toggleCondList()
     condChevBtn.Text = condListOpen and "▼" or "▶"
 end
 condChevBtn.MouseButton1Click:Connect(toggleCondList)
+condRefreshBtn.MouseButton1Click:Connect(function()
+    if not condListOpen then toggleCondList() end
+    renderConditions()
+end)
 local condHeaderClickBtn=newButton(condHeaderRow,{
     BackgroundTransparency=1, Size=UDim2.new(1,0,1,0),
     Text="", ZIndex=26,
