@@ -587,6 +587,18 @@ end
 local settingsTabBtn = makeInlineTabBtn("⚙", PAD+82)
 local configTabBtn   = makeInlineTabBtn("📁", PAD+116)
 local webhookTabBtn  = makeInlineTabBtn("◉", PAD+150)
+local whTip = newLabel(cardFrame, {
+    Position = UDim2.new(0, PAD+182, 0, yOff+4),
+    Size = UDim2.new(0, 44, 0, 20),
+    BackgroundColor3 = Color3.fromRGB(18,18,28),
+    Visible = false, ZIndex = 14,
+    Font = Enum.Font.GothamSemibold, TextSize = 10,
+    TextColor3 = Color3.fromRGB(60,60,90), Text = "Disabled",
+})
+addCorner(whTip, 6)
+addStroke(whTip, 1, Color3.fromRGB(30,30,46))
+webhookTabBtn.MouseEnter:Connect(function() whTip.Visible = true end)
+webhookTabBtn.MouseLeave:Connect(function() whTip.Visible = false end)
 
 local killBtn=newButton(cardFrame,{
     AnchorPoint=Vector2.new(1,0),
@@ -1879,21 +1891,7 @@ webhookTabBtn.BackgroundColor3 = Color3.fromRGB(16,16,24)
 local whStroke = webhookTabBtn:FindFirstChildOfClass("UIStroke")
 if whStroke then whStroke.Color = Color3.fromRGB(24,24,36) end
 
--- "Disabled" pill sits in the gap between webhook btn and kill btn
-local whTip = newLabel(cardFrame, {
-    BackgroundColor3 = Color3.fromRGB(18,18,28),
-    BackgroundTransparency = 0,
-    Position = UDim2.new(0, PAD+182, 0, yOff),
-    Size = UDim2.new(0, 44, 0, 28),
-    Visible = false, ZIndex = 14,
-    Font = Enum.Font.GothamSemibold, TextSize = 10,
-    TextColor3 = Color3.fromRGB(60,60,90), Text = "Disabled",
-})
-addCorner(whTip, 8)
-addStroke(whTip, 1, Color3.fromRGB(28,28,44))
 
-webhookTabBtn.MouseEnter:Connect(function() whTip.Visible = true end)
-webhookTabBtn.MouseLeave:Connect(function() whTip.Visible = false end)
 
 configTabBtn.MouseButton1Click:Connect(function()
     toggleSubWin(configWin,  configTabBtn)
