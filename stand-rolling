@@ -1879,27 +1879,21 @@ webhookTabBtn.BackgroundColor3 = Color3.fromRGB(16,16,24)
 local whStroke = webhookTabBtn:FindFirstChildOfClass("UIStroke")
 if whStroke then whStroke.Color = Color3.fromRGB(24,24,36) end
 
-local whTip = newLabel(ScreenGui, {
-    BackgroundColor3 = C.rowBg,
+-- "Disabled" pill sits in the gap between webhook btn and kill btn
+local whTip = newLabel(cardFrame, {
+    BackgroundColor3 = Color3.fromRGB(18,18,28),
     BackgroundTransparency = 0,
-    Size = UDim2.new(0,64,0,22), Visible = false, ZIndex = 300,
+    Position = UDim2.new(0, PAD+182, 0, yOff),
+    Size = UDim2.new(0, 44, 0, 28),
+    Visible = false, ZIndex = 14,
     Font = Enum.Font.GothamSemibold, TextSize = 10,
-    TextColor3 = C.textMuted, Text = "Disabled",
+    TextColor3 = Color3.fromRGB(60,60,90), Text = "Disabled",
 })
-addCorner(whTip, 6)
-addStroke(whTip, 1, C.rowBorder)
-addPadding(whTip, 6)
+addCorner(whTip, 8)
+addStroke(whTip, 1, Color3.fromRGB(28,28,44))
 
-webhookTabBtn.MouseEnter:Connect(function()
-    local ap = webhookTabBtn.AbsolutePosition
-    local as = webhookTabBtn.AbsoluteSize
-    -- position to the right of the webhook button
-    whTip.Position = UDim2.new(0, ap.X + as.X + 4, 0, ap.Y + (as.Y - 22) * 0.5)
-    whTip.Visible = true
-end)
-webhookTabBtn.MouseLeave:Connect(function()
-    whTip.Visible = false
-end)
+webhookTabBtn.MouseEnter:Connect(function() whTip.Visible = true end)
+webhookTabBtn.MouseLeave:Connect(function() whTip.Visible = false end)
 
 configTabBtn.MouseButton1Click:Connect(function()
     toggleSubWin(configWin,  configTabBtn)
