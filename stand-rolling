@@ -903,6 +903,10 @@ cfgListScroll.ScrollBarThickness=3
 cfgListScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
 cfgListScroll.LayoutOrder=6; cfgListScroll.ZIndex=23
 cfgListScroll.Visible=false; cfgListScroll.Parent=cfgBody
+do local p=Instance.new("UIPadding")
+    p.PaddingLeft=UDim.new(0,2);p.PaddingRight=UDim.new(0,2)
+    p.PaddingTop=UDim.new(0,3); p.PaddingBottom=UDim.new(0,3)
+    p.Parent=cfgListScroll end
 addListLayout(cfgListScroll,4)
 
 local cfgDropOpen=false
@@ -915,6 +919,7 @@ end)
 -- ── CONFIG DATA ──────────────────────────────────────────────
 -- Configs stored as: { [name] = { conditions=..., settings=..., autoload=name } }
 local savedConfigs = {}   -- { {name=string, conditions=table, settings=table} }
+local selectedConfig = nil
 local autoloadName = nil  -- name of config to autoload
 
 -- Attempt to load from a StringValue in PlayerData (persists if server saves it)
@@ -1065,6 +1070,10 @@ end
 
 local function renderConfigList()
     cfgListScroll:ClearAllChildren()
+    do local p=Instance.new("UIPadding")
+        p.PaddingLeft=UDim.new(0,2);p.PaddingRight=UDim.new(0,2)
+        p.PaddingTop=UDim.new(0,3); p.PaddingBottom=UDim.new(0,3)
+        p.Parent=cfgListScroll end
     addListLayout(cfgListScroll,4)
 
     if #savedConfigs == 0 then
@@ -1084,7 +1093,7 @@ local function renderConfigList()
             Size=UDim2.new(1,0,0,42), ZIndex=24,
         })
         addCorner(row,7)
-        addStroke(row,1, isAuto and Color3.fromRGB(40,100,60) or Color3.fromRGB(26,26,40))
+        addStroke(row,1.5, isAuto and Color3.fromRGB(40,100,60) or (selectedConfig==idx) and Color3.fromRGB(85,85,170) or Color3.fromRGB(26,26,40))
         row.LayoutOrder=idx
 
         -- autoload indicator dot
@@ -1110,54 +1119,73 @@ local function renderConfigList()
             Text=#cfg.conditions.." condition"..(#cfg.conditions~=1 and "s" or ""), ZIndex=25,
         })
 
-        -- Load button
-        local loadBtn=newButton(row,{
-            AnchorPoint=Vector2.new(1,0.5),
-            Position=UDim2.new(1,-36,0.5,0),
-            Size=UDim2.new(0,36,0,26),
-            BackgroundColor3=Color3.fromRGB(20,30,50),
-            Font=Enum.Font.GothamBold, TextSize=9,
-            TextColor3=Color3.fromRGB(85,153,238), Text="LOAD", ZIndex=26,
-        })
-        addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         local ci=idx
-        loadBtn.MouseButton1Click:Connect(function()
-            applyConfig(savedConfigs[ci].data)
-            condListContainer.Visible = true
-            condListOpen = true
-        end)
 
-        -- Auto toggle button
-        local autoBtn2=newButton(row,{
-            AnchorPoint=Vector2.new(1,0.5),
-            Position=UDim2.new(1,-68,0.5,0),
-            Size=UDim2.new(0,28,0,26),
-            BackgroundColor3=isAuto and Color3.fromRGB(12,34,20) or Color3.fromRGB(20,20,32),
-            Font=Enum.Font.GothamBold, TextSize=9,
-            TextColor3=isAuto and C.green or C.textMuted, Text="★", ZIndex=26,
+        -- Row click to select
+        local rowClickBtn=newButton(row,{
+            BackgroundTransparency=1,
+            Position=UDim2.new(0,0,0,0), Size=UDim2.new(1,-96,1,0),
+            Text="", ZIndex=26,
         })
-        addCorner(autoBtn2,6)
-        addStroke(autoBtn2,1, isAuto and Color3.fromRGB(26,74,40) or Color3.fromRGB(30,30,48))
-        autoBtn2.MouseButton1Click:Connect(function()
-            autoloadName = isAuto and nil or savedConfigs[ci].name
-            persistConfigs()
+        rowClickBtn.MouseButton1Click:Connect(function()
+            selectedConfig = (selectedConfig==ci) and nil or ci
             renderConfigList()
         end)
 
-        -- Delete button
-        local delBtn2=newButton(row,{
+        -- L = load/apply
+        local loadBtn=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-6,0.5,0),
-            Size=UDim2.new(0,26,0,26),
+            Size=UDim2.new(0,24,0,26),
+            BackgroundColor3=Color3.fromRGB(20,30,50),
+            Font=Enum.Font.GothamBold, TextSize=12,
+            TextColor3=Color3.fromRGB(85,153,238), Text="L", ZIndex=27,
+        })
+        addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
+        loadBtn.MouseButton1Click:Connect(function()
+            -- mutate Conditions in place so renderConditions sees the update
+            while #Conditions > 0 do table.remove(Conditions) end
+            for _, c in ipairs((savedConfigs[ci].data.conditions) or {}) do
+                table.insert(Conditions, {
+                    stands=c.stands or {}, minStr=c.minStr or "A",
+                    minSpd=c.minSpd or "A", minSpc=c.minSpc or "A",
+                    skins=c.skins or {}, traits=c.traits or {},
+                })
+            end
+            condListContainer.Visible=true; condListOpen=true
+            renderConditions()
+        end)
+
+        -- S = overwrite slot
+        local saveBtn2=newButton(row,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-34,0.5,0),
+            Size=UDim2.new(0,24,0,26),
+            BackgroundColor3=Color3.fromRGB(28,22,10),
+            Font=Enum.Font.GothamBold, TextSize=12,
+            TextColor3=Color3.fromRGB(180,140,40), Text="S", ZIndex=27,
+        })
+        addCorner(saveBtn2,6); addStroke(saveBtn2,1,Color3.fromRGB(80,60,10))
+        saveBtn2.MouseButton1Click:Connect(function()
+            local snap=serializeConfig()
+            savedConfigs[ci].data=snap; savedConfigs[ci].conditions=snap.conditions
+            persistConfigs(); renderConfigList()
+        end)
+
+        -- x = delete
+        local delBtn2=newButton(row,{
+            AnchorPoint=Vector2.new(1,0.5),
+            Position=UDim2.new(1,-62,0.5,0),
+            Size=UDim2.new(0,24,0,26),
             BackgroundTransparency=1,
             Font=Enum.Font.GothamBold, TextSize=11,
-            TextColor3=Color3.fromRGB(80,30,30), Text="x", ZIndex=26,
+            TextColor3=Color3.fromRGB(80,30,30), Text="x", ZIndex=27,
         })
         delBtn2.MouseButton1Click:Connect(function()
             if autoloadName==savedConfigs[ci].name then autoloadName=nil end
+            if selectedConfig==ci then selectedConfig=nil end
             table.remove(savedConfigs, ci)
-            persistConfigs()
-            renderConfigList()
+            persistConfigs(); renderConfigList()
         end)
     end
 end
@@ -1165,16 +1193,14 @@ end
 saveConfigBtn.MouseButton1Click:Connect(function()
     local name = cfgNameBox.Text
     if name=="" then name="Config "..(#savedConfigs+1) end
-    -- overwrite if same name exists
-    for i, cfg in ipairs(savedConfigs) do
-        if cfg.name==name then
-            savedConfigs[i].data=serializeConfig()
-            persistConfigs(); renderConfigList(); return
-        end
-    end
-    table.insert(savedConfigs,{name=name, data=serializeConfig(), conditions=Conditions})
+    local snap=serializeConfig()
+    table.insert(savedConfigs,{name=name, data=snap, conditions=snap.conditions})
     persistConfigs(); renderConfigList()
     cfgNameBox.Text = ""
+    if not cfgDropOpen then
+        cfgDropOpen=true; cfgListScroll.Visible=true
+        cfgDropBtn.Text="Saved Configs  â¼"
+    end
 end)
 
 -- Load persisted configs from StringValue on start
@@ -1205,7 +1231,7 @@ renderConfigList()
 -- ═══════════════════════════════════════════════════════════
 --  CONDITIONS LIST  (renders into condListContainer)
 -- ═══════════════════════════════════════════════════════════
-local condListOpen = true
+local condListOpen = false
 
 local COND_COLORS = {
     Color3.fromRGB(170,51,51),  Color3.fromRGB(170,128,32),
