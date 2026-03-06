@@ -1,0 +1,388 @@
+--// StarterPlayerScripts -> LocalScript
+-- T = manual roll (IF autoroll is ON, T only panic-stops autoroll; NO extra roll)
+-- ' = autoroll toggle (press again to stop)
+-- Y = kill script
+
+--========================
+-- Services
+--========================
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--========================
+-- Remote (roll/use item)
+--========================
+local useItem = ReplicatedStorage
+	:WaitForChild("requests")
+	:WaitForChild("character")
+	:WaitForChild("use_item")
+
+--========================
+-- Data path (Stand StringValue)
+--========================
+local StandValueObj = LocalPlayer
+	:WaitForChild("PlayerData")
+	:WaitForChild("SlotData")
+	:WaitForChild("Stand") -- StringValue
+
+--========================
+-- Settings
+--========================
+local KEYBIND = Enum.KeyCode.T
+local AUTOROLL_KEY = Enum.KeyCode.Quote -- ' key
+local KILL_KEY = Enum.KeyCode.Y
+
+local ITEM_NAME = "Stand Arrow"
+local AUTOROLL_DELAY = 0.35 -- tweak this
+
+--========================
+-- Helpers
+--========================
+local function clamp(n, a, b)
+	n = tonumber(n) or a
+	if n < a then return a end
+	if n > b then return b end
+	return n
+end
+
+local function numToLetter(n)
+	-- 1=D, 2=C, 3=B, 4=A, 5=S
+	n = clamp(n, 1, 5)
+	local map = { "D", "C", "B", "A", "S" }
+	return map[n]
+end
+
+local function extractFirstJsonObject(s)
+	s = tostring(s or "")
+	local depth = 0
+	local startIndex
+
+	for i = 1, #s do
+		local c = s:sub(i, i)
+		if c == "{" then
+			if depth == 0 then startIndex = i end
+			depth += 1
+		elseif c == "}" then
+			if depth > 0 then
+				depth -= 1
+				if depth == 0 and startIndex then
+					return s:sub(startIndex, i)
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function parseStandValue(raw)
+	raw = tostring(raw or "")
+
+	local info = {
+		name = "Unknown",
+		skin = nil,
+		trait = "Unknown",
+		strength = 1,
+		speed = 1,
+		specialty = 1,
+	}
+
+	local ok, decoded = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+
+	if not ok or type(decoded) ~= "table" then
+		local extracted = extractFirstJsonObject(raw)
+		if extracted then
+			local ok2, decoded2 = pcall(function()
+				return HttpService:JSONDecode(extracted)
+			end)
+			if ok2 and type(decoded2) == "table" then
+				ok, decoded = true, decoded2
+			end
+		end
+	end
+
+	if ok and type(decoded) == "table" then
+		if type(decoded.Name) == "string" and decoded.Name ~= "" then
+			info.name = decoded.Name
+		end
+		if type(decoded.Skin) == "string" and decoded.Skin ~= "" then
+			info.skin = decoded.Skin
+		end
+		if type(decoded.Trait) == "string" and decoded.Trait ~= "" then
+			info.trait = decoded.Trait
+		end
+
+		info.strength = clamp(decoded.Strength, 1, 5)
+		info.speed = clamp(decoded.Speed, 1, 5)
+		info.specialty = clamp(decoded.Specialty, 1, 5)
+	end
+
+	return info
+end
+
+local function makeDraggable(frame)
+	frame.Active = true
+
+	local dragging = false
+	local dragStart, startPos
+	local dragInput
+
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
+	end
+
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	frame.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			update(input)
+		end
+	end)
+end
+
+--========================
+-- GUI Build
+--========================
+local existing = PlayerGui:FindFirstChild("StandRollHUD")
+if existing then existing:Destroy() end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "StandRollHUD"
+gui.ResetOnSpawn = false
+gui.Parent = PlayerGui
+
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.AnchorPoint = Vector2.new(1, 0.5)
+panel.Position = UDim2.new(1, -18, 0.5, 0)
+panel.Size = UDim2.new(0, 360, 0, 200)
+panel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+panel.Parent = gui
+makeDraggable(panel)
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 14)
+corner.Parent = panel
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(80, 80, 95)
+stroke.Parent = panel
+
+local nameLabel = Instance.new("TextLabel")
+nameLabel.BackgroundTransparency = 1
+nameLabel.Position = UDim2.new(0, 12, 0, 10)
+nameLabel.Size = UDim2.new(1, -24, 0, 34)
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextSize = 26
+nameLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
+nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+nameLabel.Text = "—"
+nameLabel.Parent = panel
+
+local skinLabel = Instance.new("TextLabel")
+skinLabel.BackgroundTransparency = 1
+skinLabel.Position = UDim2.new(0, 12, 0, 44)
+skinLabel.Size = UDim2.new(1, -24, 0, 20)
+skinLabel.Font = Enum.Font.Gotham
+skinLabel.TextSize = 16
+skinLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
+skinLabel.TextXAlignment = Enum.TextXAlignment.Left
+skinLabel.Text = "Skin: —"
+skinLabel.Visible = false
+skinLabel.Parent = panel
+
+local traitLabel = Instance.new("TextLabel")
+traitLabel.BackgroundTransparency = 1
+traitLabel.Position = UDim2.new(0, 12, 0, 66)
+traitLabel.Size = UDim2.new(1, -24, 0, 24)
+traitLabel.Font = Enum.Font.Gotham
+traitLabel.TextSize = 18
+traitLabel.TextColor3 = Color3.fromRGB(210, 210, 220)
+traitLabel.TextXAlignment = Enum.TextXAlignment.Left
+traitLabel.Text = 'Trait: "—"'
+traitLabel.Parent = panel
+
+local function makeStatRow(y, labelText)
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Position = UDim2.new(0, 12, 0, y)
+	row.Size = UDim2.new(1, -24, 0, 30)
+	row.Parent = panel
+
+	local left = Instance.new("TextLabel")
+	left.BackgroundTransparency = 1
+	left.Size = UDim2.new(0, 120, 1, 0)
+	left.Font = Enum.Font.GothamSemibold
+	left.TextSize = 18
+	left.TextColor3 = Color3.fromRGB(230, 230, 235)
+	left.TextXAlignment = Enum.TextXAlignment.Left
+	left.Text = labelText
+	left.Parent = row
+
+	local right = Instance.new("TextLabel")
+	right.BackgroundTransparency = 1
+	right.Position = UDim2.new(0, 120, 0, 0)
+	right.Size = UDim2.new(1, -120, 1, 0)
+	right.Font = Enum.Font.GothamBold
+	right.TextSize = 20
+	right.TextColor3 = Color3.fromRGB(255, 215, 120)
+	right.TextXAlignment = Enum.TextXAlignment.Right
+	right.Text = "—"
+	right.Parent = row
+
+	return right
+end
+
+local strengthText = makeStatRow(102, "Strength")
+local speedText = makeStatRow(132, "Speed")
+local specialtyText = makeStatRow(162, "Specialty")
+
+--========================
+-- Runtime + Connections
+--========================
+local alive = true
+local connections = {}
+
+local autoroll = false
+local autorollThreadId = 0
+
+local function updateHUD()
+	if not alive then return end
+	local info = parseStandValue(StandValueObj.Value)
+
+	nameLabel.Text = info.name
+
+	if info.skin and info.skin ~= "" then
+		skinLabel.Visible = true
+		skinLabel.Text = "Skin: " .. info.skin
+		traitLabel.Position = UDim2.new(0, 12, 0, 66)
+	else
+		skinLabel.Visible = false
+		traitLabel.Position = UDim2.new(0, 12, 0, 44)
+	end
+
+	traitLabel.Text = ('Trait: "%s"'):format(info.trait)
+
+	strengthText.Text = ("%s  (%d)"):format(numToLetter(info.strength), info.strength)
+	speedText.Text = ("%s  (%d)"):format(numToLetter(info.speed), info.speed)
+	specialtyText.Text = ("%s  (%d)"):format(numToLetter(info.specialty), info.specialty)
+end
+
+local function doRoll()
+	useItem:FireServer(ITEM_NAME)
+	task.delay(0.15, updateHUD)
+	task.delay(0.35, updateHUD)
+end
+
+local function stopAutoroll()
+	autoroll = false
+end
+
+local function startAutoroll()
+	if autoroll then return end
+	autoroll = true
+
+	autorollThreadId += 1
+	local myId = autorollThreadId
+
+	task.spawn(function()
+		while alive and autoroll and autorollThreadId == myId do
+			doRoll()
+			task.wait(AUTOROLL_DELAY)
+		end
+	end)
+end
+
+local function toggleAutoroll()
+	if autoroll then
+		stopAutoroll()
+	else
+		startAutoroll()
+	end
+end
+
+local function killScript()
+	if not alive then return end
+	alive = false
+	autoroll = false
+	autorollThreadId += 1
+
+	for _, c in ipairs(connections) do
+		pcall(function() c:Disconnect() end)
+	end
+	table.clear(connections)
+
+	if gui and gui.Parent then
+		gui:Destroy()
+	end
+
+	script:Destroy()
+end
+
+-- Initial update + listen for stand changes
+updateHUD()
+table.insert(connections, StandValueObj.Changed:Connect(updateHUD))
+
+--========================
+-- Keybinds
+--========================
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if not alive then return end
+	if gameProcessed then return end
+
+	-- Kill
+	if input.KeyCode == KILL_KEY then
+		killScript()
+		return
+	end
+
+	-- Autoroll toggle (')
+	if input.KeyCode == AUTOROLL_KEY then
+		toggleAutoroll()
+		return
+	end
+
+	-- Manual / Panic stop (T)
+	if input.KeyCode == KEYBIND then
+		if autoroll then
+			-- Panic stop ONLY (no extra roll)
+			stopAutoroll()
+			return
+		end
+
+		-- Normal manual roll
+		doRoll()
+		return
+	end
+end))
