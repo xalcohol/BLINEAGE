@@ -948,8 +948,8 @@ local function serializeConfig()
 end
 
 local function applyConfig(cfg)
-    -- Restore conditions
-    Conditions = {}
+    -- Restore conditions — mutate in place so all closures see the update
+    while #Conditions > 0 do table.remove(Conditions) end
     for _, c in ipairs(cfg.conditions or {}) do
         table.insert(Conditions, {
             stands = c.stands or {},
@@ -1053,6 +1053,9 @@ local function renderConfigList()
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
         loadBtn.MouseButton1Click:Connect(function()
             applyConfig(savedConfigs[ci].data)
+            -- sync condition list visibility so it shows immediately
+            condListContainer.Visible = true
+            condListOpen = true
         end)
 
         -- S = overwrite this slot with current settings
@@ -1149,12 +1152,6 @@ local function renderConditions()
     condListContainer:ClearAllChildren()
     addListLayout(condListContainer,3)
     condCountLbl.Text = #Conditions.." active"
-    -- auto-open list whenever there are conditions
-    if #Conditions > 0 then
-        condListContainer.Visible = true
-        condListOpen = true
-        condChevBtn.Text = "â¼"
-    end
 
     for i, cond in ipairs(Conditions) do
         local item=newFrame(condListContainer,{
