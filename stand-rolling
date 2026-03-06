@@ -1,6 +1,6 @@
 --[[
   StandRollHUD_v3  —  LocalScript  →  StarterPlayerScripts
-  Kill: Y key  or  ✕ button
+  Kill: Y key  or  ✕ button N
   
   CONDITIONS structure:
     { stands={string}, minStr, minSpd, minSpc, skins={string}, traits={string} }
@@ -964,7 +964,7 @@ local function applyConfig(cfg)
     if cfg.globalStop    ~= nil then Settings.globalStop    = cfg.globalStop    end
     if cfg.autorollDelay ~= nil then Settings.autorollDelay = cfg.autorollDelay end
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
-        cfgNameBox.Text = cfg.webhookURL  -- update URL box if open
+        cfgNameBox.Text = cfg.webhookURL
     end
     renderConditions()
 end
