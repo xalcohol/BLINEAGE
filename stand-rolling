@@ -468,7 +468,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 --  DRAG  (clean, no .Active)
 -- ═══════════════════════════════════════════════════════════
-local function makeDraggable(handle, target)
+local function makeDraggable(handle, target, onDragEnd)
     local dragging, startMouse, startPos
     handle.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1
@@ -482,6 +482,7 @@ local function makeDraggable(handle, target)
         if inp.UserInputType==Enum.UserInputType.MouseButton1
         or inp.UserInputType==Enum.UserInputType.Touch then
             dragging=false
+            if onDragEnd then onDragEnd() end
         end
     end)
     table.insert(connections, UserInputService.InputChanged:Connect(function(inp)
@@ -522,7 +523,7 @@ local dragBar=newFrame(cardFrame,{
     Position=UDim2.new(0,0,0,0),
     Size=UDim2.new(0,CARD_W,0,26), ZIndex=30,
 })
-makeDraggable(dragBar,hudHolder)
+makeDraggable(dragBar,hudHolder,function() posSave("hud",hudHolder) end)
 
 local yOff=26
 
@@ -676,7 +677,7 @@ local function makeSubWin(name, w, h)
         BackgroundTransparency=1,
         Size=UDim2.new(1,0,0,36), ZIndex=21,
     })
-    makeDraggable(titleBar,win)
+    makeDraggable(titleBar,win,function() posSave(win.Name,win) end)
 
     newLabel(titleBar,{
         Position=UDim2.new(0,14,0,0), Size=UDim2.new(1,-34,1,0),
@@ -1038,12 +1039,33 @@ local selectedConfig = nil
 local autoloadName = nil
 
 local CFG_FILE = "StandRollHUD_configs.json"
+local POS_FILE = "StandRollHUD_positions.json"
 local function fileRead()
     local ok, data = pcall(readfile, CFG_FILE)
     return (ok and type(data)=="string") and data or ""
 end
 local function fileWrite(data)
     pcall(writefile, CFG_FILE, data)
+end
+local function posRead()
+    local ok, data = pcall(readfile, POS_FILE)
+    if ok and type(data)=="string" then
+        local ok2, t = pcall(HttpService.JSONDecode, HttpService, data)
+        if ok2 and type(t)=="table" then return t end
+    end
+    return {}
+end
+local function posSave(key, frame)
+    local t = posRead()
+    local p = frame.Position
+    t[key] = {x=p.X.Offset, y=p.Y.Offset, xs=p.X.Scale, ys=p.Y.Scale}
+    pcall(writefile, POS_FILE, HttpService:JSONEncode(t))
+end
+local function posLoad(key, frame)
+    local t = posRead()
+    if t[key] then
+        frame.Position = UDim2.new(t[key].xs or 0, t[key].x, t[key].ys or 0, t[key].y)
+    end
 end
 
 local function serializeConfig()
@@ -2114,6 +2136,11 @@ settingsWin.Visible = false
 webhookWin.Visible  = false
 configWin.Visible   = false
 wizWin.Visible      = false
+
+-- restore saved window positions
+posLoad("hud",      hudHolder)
+posLoad("Settings", settingsWin)
+posLoad("Configs",  configWin)
 
 updateHUD()
 
