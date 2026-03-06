@@ -1880,20 +1880,21 @@ local whStroke = webhookTabBtn:FindFirstChildOfClass("UIStroke")
 if whStroke then whStroke.Color = Color3.fromRGB(24,24,36) end
 
 local whTip = newLabel(ScreenGui, {
-    BackgroundColor3 = Color3.fromRGB(12,12,20),
+    BackgroundColor3 = C.rowBg,
     BackgroundTransparency = 0,
-    Size = UDim2.new(0,160,0,22), Visible = false, ZIndex = 300,
+    Size = UDim2.new(0,64,0,22), Visible = false, ZIndex = 300,
     Font = Enum.Font.GothamSemibold, TextSize = 10,
-    TextColor3 = Color3.fromRGB(120,40,40), Text = "Webhook coming soon",
+    TextColor3 = C.textMuted, Text = "Disabled",
 })
-addCorner(whTip, 5)
-addStroke(whTip, 1, Color3.fromRGB(60,20,20))
+addCorner(whTip, 6)
+addStroke(whTip, 1, C.rowBorder)
 addPadding(whTip, 6)
 
 webhookTabBtn.MouseEnter:Connect(function()
     local ap = webhookTabBtn.AbsolutePosition
     local as = webhookTabBtn.AbsoluteSize
-    whTip.Position = UDim2.new(0, ap.X, 0, ap.Y - 28)
+    -- position to the right of the webhook button
+    whTip.Position = UDim2.new(0, ap.X + as.X + 4, 0, ap.Y + (as.Y - 22) * 0.5)
     whTip.Visible = true
 end)
 webhookTabBtn.MouseLeave:Connect(function()
