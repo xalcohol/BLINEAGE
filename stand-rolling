@@ -1,8 +1,7 @@
 --// StarterPlayerScripts -> LocalScript
--- T   = manual roll  (if autoroll ON → stops autoroll only)
--- '   = autoroll toggle
--- Y   = kill script
--- GUI button also toggles autoroll
+-- Y = kill script  (also killable via GUI button)
+-- GUI autoroll button toggles autoroll
+-- GUI kill button destroys the script
 
 --========================
 -- Services
@@ -36,8 +35,6 @@ local StandValueObj = LocalPlayer
 --========================
 -- Settings
 --========================
-local KEYBIND        = Enum.KeyCode.T
-local AUTOROLL_KEY   = Enum.KeyCode.Quote
 local KILL_KEY       = Enum.KeyCode.Y
 local ITEM_NAME      = "Stand Arrow"
 local AUTOROLL_DELAY = 0.35
@@ -380,14 +377,15 @@ div3.ZIndex           = 12
 div3.Parent           = card
 
 --──────────────────────────────────────────────────
---  SECTION 4: Bottom bar — autoroll button + status
---  (y = 196..248)
+--  SECTION 4: Bottom bar — autoroll + kill buttons + status
 --──────────────────────────────────────────────────
+
+-- AUTO button (left)
 local autoBtn = Instance.new("TextButton")
 autoBtn.Name             = "AutoBtn"
 autoBtn.AnchorPoint      = Vector2.new(0, 1)
 autoBtn.Position         = UDim2.new(0, 18, 1, -16)
-autoBtn.Size             = UDim2.new(0, 148, 0, 36)
+autoBtn.Size             = UDim2.new(0, 120, 0, 36)
 autoBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
 autoBtn.BorderSizePixel  = 0
 autoBtn.Font             = Enum.Font.GothamBold
@@ -396,24 +394,46 @@ autoBtn.TextColor3       = Color3.fromRGB(200, 200, 210)
 autoBtn.Text             = "AUTO  OFF"
 autoBtn.ZIndex           = 13
 autoBtn.Parent           = card
-
 do
 	local r = Instance.new("UICorner")
 	r.CornerRadius = UDim.new(0, 10)
 	r.Parent = autoBtn
 end
-
 local autoBtnStroke = Instance.new("UIStroke")
 autoBtnStroke.Thickness = 1.5
 autoBtnStroke.Color     = Color3.fromRGB(55, 55, 68)
 autoBtnStroke.Parent    = autoBtn
+
+-- KILL button (left, beside auto)
+local killBtn = Instance.new("TextButton")
+killBtn.Name             = "KillBtn"
+killBtn.AnchorPoint      = Vector2.new(0, 1)
+killBtn.Position         = UDim2.new(0, 146, 1, -16)
+killBtn.Size             = UDim2.new(0, 36, 0, 36)
+killBtn.BackgroundColor3 = Color3.fromRGB(40, 18, 18)
+killBtn.BorderSizePixel  = 0
+killBtn.Font             = Enum.Font.GothamBold
+killBtn.TextSize         = 16
+killBtn.TextColor3       = Color3.fromRGB(180, 60, 60)
+killBtn.Text             = "✕"
+killBtn.ZIndex           = 13
+killBtn.Parent           = card
+do
+	local r = Instance.new("UICorner")
+	r.CornerRadius = UDim.new(0, 10)
+	r.Parent = killBtn
+end
+local killBtnStroke = Instance.new("UIStroke")
+killBtnStroke.Thickness = 1.5
+killBtnStroke.Color     = Color3.fromRGB(90, 30, 30)
+killBtnStroke.Parent    = killBtn
 
 -- Status label (right side of bottom bar)
 local statusLabel = Instance.new("TextLabel")
 statusLabel.BackgroundTransparency = 1
 statusLabel.AnchorPoint      = Vector2.new(1, 1)
 statusLabel.Position         = UDim2.new(1, -18, 1, -22)
-statusLabel.Size             = UDim2.new(0, 148, 0, 18)
+statusLabel.Size             = UDim2.new(0, 130, 0, 18)
 statusLabel.Font             = Enum.Font.GothamSemibold
 statusLabel.TextSize         = 12
 statusLabel.TextColor3       = Color3.fromRGB(70, 70, 85)
@@ -422,17 +442,17 @@ statusLabel.Text             = "IDLE"
 statusLabel.ZIndex           = 13
 statusLabel.Parent           = card
 
--- tiny T-key hint under status
+-- Y = kill hint under status
 local keyHint = Instance.new("TextLabel")
 keyHint.BackgroundTransparency = 1
 keyHint.AnchorPoint      = Vector2.new(1, 1)
 keyHint.Position         = UDim2.new(1, -18, 1, -6)
-keyHint.Size             = UDim2.new(0, 148, 0, 14)
+keyHint.Size             = UDim2.new(0, 130, 0, 14)
 keyHint.Font             = Enum.Font.Gotham
 keyHint.TextSize         = 10
 keyHint.TextColor3       = Color3.fromRGB(50, 50, 62)
 keyHint.TextXAlignment   = Enum.TextXAlignment.Right
-keyHint.Text             = "T  manual  ·  Y  quit"
+keyHint.Text             = "Y  kill script"
 keyHint.ZIndex           = 13
 keyHint.Parent           = card
 
@@ -446,6 +466,7 @@ local autorollThreadId = 0
 local stopReason      = "IDLE"
 
 local rainbowTargets = { strength=false, speed=false, specialty=false, skin=false }
+local lastGrades     = { strength="D", speed="D", specialty="D" }
 local specialStandActive   = false
 local legendaryFlashActive = false
 local lastStandSignature   = nil
@@ -556,6 +577,7 @@ local function updateHUD()
 		rainbowTargets[key] = (letter == "S")
 		setChipGrade(key, letter)   -- sets bg + border; letter is always white
 	end
+	lastGrades = grades  -- expose to RenderStepped for border color averaging
 
 	specialStandActive   = SPECIAL_STANDS[info.name] == true
 	legendaryFlashActive = specialStandActive and (info.skin ~= nil and info.skin ~= "")
@@ -588,17 +610,22 @@ local function updateHUD()
 			end
 		end
 
-		-- Stop conditions (all require special stand EXCEPT isTargetSkin which has its own rule)
+		-- Stop conditions
+		-- isTargetSkin fires regardless of special stand (Galaxy Garou works on any stand)
+		-- All other conditions require a special stand
 		if autoroll then
 			if isTargetSkin then
-				-- Jackpot if target skin AND all S
-				if allS then
+				-- True jackpot: target skin + all S + transcendent
+				if allS and isTranscendent then
 					stopAutoroll("JACKPOT")
 				else
 					stopAutoroll("TARGET_SKIN")
 				end
 			elseif specialStandActive then
-				if isTranscendent then
+				if isTranscendent and STOP_ON_ALL_S and allS then
+					-- Special stand + transcendent + all S (non-target-skin jackpot)
+					stopAutoroll("JACKPOT")
+				elseif isTranscendent then
 					stopAutoroll("TRANSCENDENT")
 				elseif STOP_ON_ALL_S and allS then
 					stopAutoroll("ALL_S")
@@ -633,6 +660,7 @@ end
 updateHUD()
 table.insert(connections, StandValueObj.Changed:Connect(updateHUD))
 table.insert(connections, autoBtn.MouseButton1Click:Connect(toggleAutoroll))
+table.insert(connections, killBtn.MouseButton1Click:Connect(killScript))
 
 --========================
 -- RenderStepped
@@ -652,12 +680,9 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- Any S stat? Card border also does a slow rainbow cycle
+	-- Card border: triple S = slow rainbow; otherwise = averaged grade color
+	local allSForBorder = rainbowTargets.strength and rainbowTargets.speed and rainbowTargets.specialty
 	local anyS = rainbowTargets.strength or rainbowTargets.speed or rainbowTargets.specialty
-	if anyS and not legendaryFlashActive then
-		cardStroke.Color     = Color3.fromHSV(hue, 0.7, 0.95)
-		cardStroke.Thickness = 2
-	end
 
 	-- Skin pill rainbow (slow, matches chip hue)
 	if rainbowTargets.skin and skinPill.Visible then
@@ -676,12 +701,39 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
 		nameLabel.TextColor3 = Color3.fromRGB(245, 245, 250)
 	end
 
-	-- Legendary card border (special + skin) — red pulse overrides rainbow
+	-- Card border priority: legendary red > triple-S rainbow > avg grade glow > default
 	if legendaryFlashActive then
 		local p = (math.sin(t * 7) + 1) * 0.5
 		cardStroke.Color     = lerpColor(Color3.fromRGB(180,20,20), Color3.fromRGB(255,80,80), p)
 		cardStroke.Thickness = 1.5 + p * 2
-	elseif not anyS then
+	elseif allSForBorder then
+		-- Triple S: full slow rainbow on border
+		cardStroke.Color     = Color3.fromHSV(hue, 0.75, 1)
+		cardStroke.Thickness = 2.5
+	elseif anyS then
+		-- Mix of grades: blend toward gold (S color), weight by how many are S
+		local sCount = (rainbowTargets.strength and 1 or 0)
+		             + (rainbowTargets.speed    and 1 or 0)
+		             + (rainbowTargets.specialty and 1 or 0)
+		-- sCount is 1 or 2 here (triple handled above)
+		-- For non-S stats, contribute their grade color to the average
+		local statKeys = {"strength","speed","specialty"}
+		local GRADE_BORDER = {
+			S = Color3.fromRGB(255, 200, 60),
+			A = Color3.fromRGB(100, 170, 255),
+			B = Color3.fromRGB(80,  210, 100),
+			C = Color3.fromRGB(80,  80,  100),
+			D = Color3.fromRGB(50,  50,  62),
+		}
+		local avgR, avgG, avgB = 0, 0, 0
+		local currentGrades = { strength=lastGrades.strength, speed=lastGrades.speed, specialty=lastGrades.specialty }
+		for _, k in ipairs(statKeys) do
+			local gc = GRADE_BORDER[currentGrades[k]] or Color3.fromRGB(50,50,62)
+			avgR += gc.R ; avgG += gc.G ; avgB += gc.B
+		end
+		cardStroke.Color     = Color3.new(avgR/3, avgG/3, avgB/3)
+		cardStroke.Thickness = 2
+	else
 		cardStroke.Color     = Color3.fromRGB(50, 50, 60)
 		cardStroke.Thickness = 1.5
 	end
@@ -724,17 +776,11 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
 end))
 
 --========================
--- Keybinds
+-- Keybinds (Y only)
 --========================
 table.insert(connections, UserInputService.InputBegan:Connect(function(inp, gp)
 	if not alive or gp then return end
-
 	if inp.KeyCode == KILL_KEY then
 		killScript()
-	elseif inp.KeyCode == AUTOROLL_KEY then
-		toggleAutoroll()
-	elseif inp.KeyCode == KEYBIND then
-		if autoroll then stopAutoroll("MANUAL")
-		else doRoll() end
 	end
 end))
