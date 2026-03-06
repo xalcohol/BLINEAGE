@@ -607,7 +607,7 @@ local function makeSubWin(name, w, h)
 end
 
 -- ── SETTINGS WINDOW ──────────────────────────────────────────
-local settingsWin, settingsStroke, settingsCloseBtn = makeSubWin("Settings",290,270)
+local settingsWin, settingsStroke, settingsCloseBtn = makeSubWin("Settings",290,290)
 
 -- scrollable body
 local settingsBody=newFrame(settingsWin,{
@@ -749,26 +749,26 @@ addCondBtn.LayoutOrder=4
 addCorner(addCondBtn,7)
 addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
 
--- ROLL DELAY — sits at bottom of settings, outside scroll as a footer row
-local delayRow=newFrame(settingsWin,{
-    BackgroundColor3=Color3.fromRGB(14,14,22),
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,0,1,0),
-    Size=UDim2.new(1,0,0,38), ZIndex=22,
+-- ROLL DELAY — in scroll, last item, same style as condition rows
+sectionLabel(settingsScroll,"ROLL",5)
+local delayRow=newFrame(settingsScroll,{
+    BackgroundColor3=C.rowBg,
+    Size=UDim2.new(1,0,0,32), ZIndex=23,
 })
-addCorner(delayRow,12)
-addStroke(delayRow,1,C.border)
+addCorner(delayRow,7)
+addStroke(delayRow,1,C.rowBorder)
+delayRow.LayoutOrder=6
 newLabel(delayRow,{
-    Position=UDim2.new(0,14,0,0), Size=UDim2.new(0.5,0,1,0),
+    Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
     Font=Enum.Font.GothamSemibold, TextSize=11,
-    TextColor3=C.textDim, Text="Roll delay (s)", ZIndex=23,
+    TextColor3=C.textDim, Text="Delay (s)", ZIndex=24,
 })
 local delayVal=newLabel(delayRow,{
     AnchorPoint=Vector2.new(1,0.5),
-    Position=UDim2.new(1,-14,0.5,0), Size=UDim2.new(0.35,0,0,14),
+    Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.35,0,1,0),
     Font=Enum.Font.Code, TextSize=11,
     TextColor3=C.textMuted, TextXAlignment=Enum.TextXAlignment.Right,
-    Text="0.35", ZIndex=23,
+    Text="0.35", ZIndex=24,
 })
 -- stub so existing references don't break
 local getGlobalStop = function() return true end
@@ -835,17 +835,13 @@ end))
 --  so they persist across sessions via server-side DataStore
 --  (or fall back to in-memory if DataStore unavailable)
 -- ═══════════════════════════════════════════════════════════
-local configWin, configStroke, configCloseBtn = makeSubWin("Configs",290,240)
+local configWin, configStroke, configCloseBtn = makeSubWin("Configs",290,320)
 
-local cfgBody=Instance.new("ScrollingFrame")
-cfgBody.BackgroundTransparency=1; cfgBody.BorderSizePixel=0
-cfgBody.Position=UDim2.new(0,0,0,37)
-cfgBody.Size=UDim2.new(1,0,1,-37)
-cfgBody.CanvasSize=UDim2.new(0,0,0,0)
-cfgBody.AutomaticCanvasSize=Enum.AutomaticSize.Y
-cfgBody.ScrollBarThickness=3
-cfgBody.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
-cfgBody.ZIndex=21; cfgBody.Parent=configWin
+local cfgBody=newFrame(configWin,{
+    BackgroundTransparency=1,
+    Position=UDim2.new(0,0,0,37),
+    Size=UDim2.new(1,0,1,-37), ZIndex=21,
+})
 do
     local p=Instance.new("UIPadding")
     p.PaddingLeft=UDim.new(0,12); p.PaddingRight=UDim.new(0,12)
@@ -896,7 +892,7 @@ addCorner(cfgDropBtn,7); addStroke(cfgDropBtn,1,Color3.fromRGB(34,34,54))
 -- Dropdown list frame (hidden by default)
 local cfgListScroll=Instance.new("ScrollingFrame")
 cfgListScroll.BackgroundTransparency=1; cfgListScroll.BorderSizePixel=0
-cfgListScroll.Size=UDim2.new(1,0,0,0)
+cfgListScroll.Size=UDim2.new(1,0,0,180)
 cfgListScroll.CanvasSize=UDim2.new(0,0,0,0)
 cfgListScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
 cfgListScroll.ScrollBarThickness=3
@@ -1369,30 +1365,26 @@ local function setWizStep(s)
             local sn=standName
             local unavail=UNAVAILABLE_STANDS[sn]==true
             local btn=newButton(grid,{
-                BackgroundColor3=unavail and Color3.fromRGB(28,8,8)
-                    or sel and Color3.fromRGB(20,20,42)
-                    or Color3.fromRGB(20,20,32),
+                BackgroundColor3=Color3.fromRGB(17,17,24), -- always black bg
                 Size=UDim2.new(0,1,0,1), -- overridden by grid layout
-                Font=Enum.Font.GothamSemibold, TextSize=11,
-                TextColor3=unavail and Color3.fromRGB(160,50,50)
+                Font=unavail and Enum.Font.GothamBold or Enum.Font.GothamSemibold,
+                TextSize=11,
+                TextColor3=unavail and Color3.fromRGB(200,200,200)  -- white on unavail
                     or sel and Color3.fromRGB(170,170,238)
                     or C.textDim,
                 Text=sn, ZIndex=24,
             })
             addCorner(btn,7)
             addStroke(btn,1.5,
-                unavail and Color3.fromRGB(160,40,40)
+                unavail and Color3.fromRGB(140,35,35)   -- subtle red border only
                 or sel and Color3.fromRGB(85,85,170)
                 or Color3.fromRGB(30,30,48))
             if unavail then
-                -- Show tooltip on hover
                 btn.MouseEnter:Connect(function()
-                    btn.Text=sn.." (unavailable)"
-                    btn.TextColor3=Color3.fromRGB(200,60,60)
+                    btn.TextColor3=Color3.fromRGB(220,80,80)  -- red tint on hover hint
                 end)
                 btn.MouseLeave:Connect(function()
-                    btn.Text=sn
-                    btn.TextColor3=Color3.fromRGB(160,50,50)
+                    btn.TextColor3=Color3.fromRGB(200,200,200)
                 end)
             else
                 btn.MouseButton1Click:Connect(function()
@@ -1456,18 +1448,13 @@ local function setWizStep(s)
                 local gradeCol = gc(g)
                 local gradebtn=newButton(gradeHolder,{
                     Size=UDim2.new(0,36,0,28),
-                    -- selected: very faint grade tint bg so letter stays readable
-                    BackgroundColor3=sel
-                        and Color3.new(gradeCol.R*0.12, gradeCol.G*0.12, gradeCol.B*0.12)
-                        or  Color3.fromRGB(17,17,24),
+                    BackgroundColor3=Color3.fromRGB(17,17,24), -- always black
                     Font=Enum.Font.GothamBold, TextSize=12,
-                    -- selected: white letter (readable against tint), unselected: dim
-                    TextColor3=sel and Color3.fromRGB(230,230,230) or Color3.fromRGB(52,52,68),
+                    TextColor3=sel and Color3.fromRGB(235,235,235) or Color3.fromRGB(52,52,68),
                     Text=g, ZIndex=25,
                 })
                 gradebtn.LayoutOrder=gi
                 addCorner(gradebtn,5)
-                -- border glows grade colour when selected
                 addStroke(gradebtn, sel and 2 or 1,
                     sel and gradeCol or Color3.fromRGB(28,28,38))
                 gradebtn.MouseButton1Click:Connect(function()
