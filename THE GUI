@@ -966,10 +966,6 @@ local function applyConfig(cfg)
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
         cfgNameBox.Text = cfg.webhookURL
     end
-    -- Force condition list visible and re-render
-    condListOpen = true
-    condListContainer.Visible = true
-    condChevBtn.Text = "â¼"
     renderConditions()
 end
 
@@ -1042,9 +1038,6 @@ local function renderConfigList()
         })
         rowClickBtn.MouseButton1Click:Connect(function()
             selectedConfig = (selectedConfig==ci) and nil or ci
-            if selectedConfig==ci then
-                applyConfig(savedConfigs[ci].data)
-            end
             renderConfigList()
         end)
 
