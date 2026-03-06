@@ -776,13 +776,25 @@ newLabel(delayRow,{
     Font=Enum.Font.GothamSemibold, TextSize=11,
     TextColor3=C.textDim, Text="Delay (s)", ZIndex=24,
 })
-local delayVal=newLabel(delayRow,{
-    AnchorPoint=Vector2.new(1,0.5),
-    Position=UDim2.new(1,-10,0.5,0), Size=UDim2.new(0.35,0,1,0),
-    Font=Enum.Font.Code, TextSize=11,
-    TextColor3=C.textMuted, TextXAlignment=Enum.TextXAlignment.Right,
-    Text="0.35", ZIndex=24,
-})
+local delayVal=Instance.new("TextBox")
+delayVal.BackgroundTransparency=1
+delayVal.AnchorPoint=Vector2.new(1,0.5)
+delayVal.Position=UDim2.new(1,-10,0.5,0)
+delayVal.Size=UDim2.new(0.35,0,0,20)
+delayVal.Font=Enum.Font.Code; delayVal.TextSize=11
+delayVal.TextColor3=C.textMuted
+delayVal.TextXAlignment=Enum.TextXAlignment.Right
+delayVal.Text="0.35"; delayVal.ClearTextOnFocus=false
+delayVal.ZIndex=24; delayVal.Parent=delayRow
+delayVal.FocusLost:Connect(function()
+    local n=tonumber(delayVal.Text)
+    if n then
+        Settings.autorollDelay=math.clamp(n,0.1,10)
+        delayVal.Text=string.format("%.2f",Settings.autorollDelay)
+    else
+        delayVal.Text=string.format("%.2f",Settings.autorollDelay)
+    end
+end)
 local getGlobalStop = function() return true end
 local setGlobalStop = function() end
 
@@ -1396,23 +1408,24 @@ local function setWizStep(s)
             local sn=standName
             local unavail=UNAVAILABLE_STANDS[sn]==true
             local btn=newButton(grid,{
-                BackgroundColor3=Color3.fromRGB(17,17,24), -- always black bg
+                BackgroundColor3=unavail and Color3.fromRGB(28,28,40)
+                    or sel and Color3.fromRGB(20,20,42)
+                    or Color3.fromRGB(20,20,32),
                 Size=UDim2.new(0,1,0,1), -- overridden by grid layout
-                Font=unavail and Enum.Font.GothamBold or Enum.Font.GothamSemibold,
-                TextSize=11,
-                TextColor3=unavail and Color3.fromRGB(200,200,200)  -- white on unavail
+                Font=Enum.Font.GothamSemibold, TextSize=11,
+                TextColor3=unavail and Color3.fromRGB(200,200,200)
                     or sel and Color3.fromRGB(170,170,238)
                     or C.textDim,
                 Text=sn, ZIndex=24,
             })
             addCorner(btn,7)
             addStroke(btn,1.5,
-                unavail and Color3.fromRGB(140,35,35)   -- subtle red border only
+                unavail and Color3.fromRGB(140,35,35)
                 or sel and Color3.fromRGB(85,85,170)
                 or Color3.fromRGB(30,30,48))
             if unavail then
                 btn.MouseEnter:Connect(function()
-                    btn.TextColor3=Color3.fromRGB(220,80,80)  -- red tint on hover hint
+                    btn.TextColor3=Color3.fromRGB(220,80,80)
                 end)
                 btn.MouseLeave:Connect(function()
                     btn.TextColor3=Color3.fromRGB(200,200,200)
@@ -1479,7 +1492,7 @@ local function setWizStep(s)
                 local gradeCol = gc(g)
                 local gradebtn=newButton(gradeHolder,{
                     Size=UDim2.new(0,36,0,28),
-                    BackgroundColor3=Color3.fromRGB(17,17,24), -- always black
+                    BackgroundColor3=sel and Color3.fromRGB(28,28,40) or Color3.fromRGB(17,17,24),
                     Font=Enum.Font.GothamBold, TextSize=12,
                     TextColor3=sel and Color3.fromRGB(235,235,235) or Color3.fromRGB(52,52,68),
                     Text=g, ZIndex=25,
