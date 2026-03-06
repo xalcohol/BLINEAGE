@@ -2,6 +2,13 @@
 -- T = manual roll (IF autoroll is ON, T only panic-stops autoroll; NO extra roll)
 -- ' = autoroll toggle (press again to stop)
 -- Y = kill script
+--
+-- Effects:
+-- - Skin text rainbow strobe when Skin exists
+-- - Any S stat rainbow strobe on that stat
+-- - Special stand name red strobe (updated list)
+-- - If (special stand AND has skin): flashy border + screen flash + STOP autoroll
+-- - If (special stand AND Strength/Speed/Specialty are ALL S): STOP autoroll (also flashes if skin condition is met)
 
 --========================
 -- Services
@@ -10,6 +17,8 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -38,7 +47,14 @@ local AUTOROLL_KEY = Enum.KeyCode.Quote -- ' key
 local KILL_KEY = Enum.KeyCode.Y
 
 local ITEM_NAME = "Stand Arrow"
-local AUTOROLL_DELAY = 0.35 -- tweak this
+local AUTOROLL_DELAY = 0.35
+
+-- Updated: removed "The World" + "Star Platinum"
+local SPECIAL_STANDS = {
+	["White Snake"] = true,
+	["Killer Queen"] = true,
+	["King Crimson"] = true,
+}
 
 --========================
 -- Helpers
@@ -65,7 +81,9 @@ local function extractFirstJsonObject(s)
 	for i = 1, #s do
 		local c = s:sub(i, i)
 		if c == "{" then
-			if depth == 0 then startIndex = i end
+			if depth == 0 then
+				startIndex = i
+			end
 			depth += 1
 		elseif c == "}" then
 			if depth > 0 then
@@ -76,6 +94,7 @@ local function extractFirstJsonObject(s)
 			end
 		end
 	end
+
 	return nil
 end
 
@@ -102,7 +121,8 @@ local function parseStandValue(raw)
 				return HttpService:JSONDecode(extracted)
 			end)
 			if ok2 and type(decoded2) == "table" then
-				ok, decoded = true, decoded2
+				ok = true
+				decoded = decoded2
 			end
 		end
 	end
@@ -111,9 +131,11 @@ local function parseStandValue(raw)
 		if type(decoded.Name) == "string" and decoded.Name ~= "" then
 			info.name = decoded.Name
 		end
+
 		if type(decoded.Skin) == "string" and decoded.Skin ~= "" then
 			info.skin = decoded.Skin
 		end
+
 		if type(decoded.Trait) == "string" and decoded.Trait ~= "" then
 			info.trait = decoded.Trait
 		end
@@ -144,6 +166,7 @@ local function makeDraggable(frame)
 	frame.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
+
 			dragging = true
 			dragStart = input.Position
 			startPos = frame.Position
@@ -170,16 +193,37 @@ local function makeDraggable(frame)
 	end)
 end
 
+local function lerpColor(a, b, t)
+	return Color3.new(
+		a.R + (b.R - a.R) * t,
+		a.G + (b.G - a.G) * t,
+		a.B + (b.B - a.B) * t
+	)
+end
+
 --========================
 -- GUI Build
 --========================
 local existing = PlayerGui:FindFirstChild("StandRollHUD")
-if existing then existing:Destroy() end
+if existing then
+	existing:Destroy()
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "StandRollHUD"
 gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
 gui.Parent = PlayerGui
+
+local flashOverlay = Instance.new("Frame")
+flashOverlay.Name = "FlashOverlay"
+flashOverlay.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+flashOverlay.BackgroundTransparency = 1
+flashOverlay.BorderSizePixel = 0
+flashOverlay.Size = UDim2.new(1, 0, 1, 0)
+flashOverlay.Position = UDim2.new(0, 0, 0, 0)
+flashOverlay.ZIndex = 50
+flashOverlay.Parent = gui
 
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
@@ -187,6 +231,7 @@ panel.AnchorPoint = Vector2.new(1, 0.5)
 panel.Position = UDim2.new(1, -18, 0.5, 0)
 panel.Size = UDim2.new(0, 360, 0, 200)
 panel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+panel.ZIndex = 5
 panel.Parent = gui
 makeDraggable(panel)
 
@@ -199,6 +244,19 @@ stroke.Thickness = 2
 stroke.Color = Color3.fromRGB(80, 80, 95)
 stroke.Parent = panel
 
+local accentBar = Instance.new("Frame")
+accentBar.Name = "AccentBar"
+accentBar.BorderSizePixel = 0
+accentBar.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+accentBar.Size = UDim2.new(1, 0, 0, 4)
+accentBar.Position = UDim2.new(0, 0, 0, 0)
+accentBar.ZIndex = 6
+accentBar.Parent = panel
+
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(0, 14)
+accentCorner.Parent = accentBar
+
 local nameLabel = Instance.new("TextLabel")
 nameLabel.BackgroundTransparency = 1
 nameLabel.Position = UDim2.new(0, 12, 0, 10)
@@ -208,7 +266,14 @@ nameLabel.TextSize = 26
 nameLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
 nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 nameLabel.Text = "—"
+nameLabel.ZIndex = 7
 nameLabel.Parent = panel
+
+local nameStroke = Instance.new("UIStroke")
+nameStroke.Thickness = 1.5
+nameStroke.Color = Color3.fromRGB(255, 255, 255)
+nameStroke.Transparency = 0.35
+nameStroke.Parent = nameLabel
 
 local skinLabel = Instance.new("TextLabel")
 skinLabel.BackgroundTransparency = 1
@@ -220,7 +285,14 @@ skinLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
 skinLabel.TextXAlignment = Enum.TextXAlignment.Left
 skinLabel.Text = "Skin: —"
 skinLabel.Visible = false
+skinLabel.ZIndex = 7
 skinLabel.Parent = panel
+
+local skinStroke = Instance.new("UIStroke")
+skinStroke.Thickness = 1.5
+skinStroke.Color = Color3.fromRGB(255, 255, 255)
+skinStroke.Transparency = 0.25
+skinStroke.Parent = skinLabel
 
 local traitLabel = Instance.new("TextLabel")
 traitLabel.BackgroundTransparency = 1
@@ -231,6 +303,7 @@ traitLabel.TextSize = 18
 traitLabel.TextColor3 = Color3.fromRGB(210, 210, 220)
 traitLabel.TextXAlignment = Enum.TextXAlignment.Left
 traitLabel.Text = 'Trait: "—"'
+traitLabel.ZIndex = 7
 traitLabel.Parent = panel
 
 local function makeStatRow(y, labelText)
@@ -238,6 +311,7 @@ local function makeStatRow(y, labelText)
 	row.BackgroundTransparency = 1
 	row.Position = UDim2.new(0, 12, 0, y)
 	row.Size = UDim2.new(1, -24, 0, 30)
+	row.ZIndex = 7
 	row.Parent = panel
 
 	local left = Instance.new("TextLabel")
@@ -248,6 +322,7 @@ local function makeStatRow(y, labelText)
 	left.TextColor3 = Color3.fromRGB(230, 230, 235)
 	left.TextXAlignment = Enum.TextXAlignment.Left
 	left.Text = labelText
+	left.ZIndex = 7
 	left.Parent = row
 
 	local right = Instance.new("TextLabel")
@@ -259,14 +334,21 @@ local function makeStatRow(y, labelText)
 	right.TextColor3 = Color3.fromRGB(255, 215, 120)
 	right.TextXAlignment = Enum.TextXAlignment.Right
 	right.Text = "—"
+	right.ZIndex = 7
 	right.Parent = row
 
-	return right
+	local glow = Instance.new("UIStroke")
+	glow.Thickness = 2
+	glow.Color = Color3.fromRGB(255, 215, 120)
+	glow.Transparency = 0.2
+	glow.Parent = right
+
+	return right, glow
 end
 
-local strengthText = makeStatRow(102, "Strength")
-local speedText = makeStatRow(132, "Speed")
-local specialtyText = makeStatRow(162, "Specialty")
+local strengthText, strengthGlow = makeStatRow(102, "Strength")
+local speedText, speedGlow = makeStatRow(132, "Speed")
+local specialtyText, specialtyGlow = makeStatRow(162, "Specialty")
 
 --========================
 -- Runtime + Connections
@@ -277,36 +359,164 @@ local connections = {}
 local autoroll = false
 local autorollThreadId = 0
 
+local rainbowTargets = {
+	skin = false,
+	strength = false,
+	speed = false,
+	specialty = false,
+}
+
+local specialStandActive = false
+local legendarySkinFlashyActive = false
+local allSStopActive = false
+
+local lastStandSignature = nil
+local flashTweenIn = nil
+local flashTweenOut = nil
+
+local function setNormalStatVisual(label, glow)
+	label.TextColor3 = Color3.fromRGB(255, 215, 120)
+	glow.Color = Color3.fromRGB(255, 215, 120)
+	glow.Transparency = 0.2
+end
+
+local function applyRainbowToLabel(label, glow, hue)
+	local color = Color3.fromHSV(hue, 1, 1)
+	label.TextColor3 = color
+	if glow then
+		glow.Color = color
+		glow.Transparency = 0
+	end
+end
+
+local function triggerLegendaryFlash()
+	if flashTweenIn then pcall(function() flashTweenIn:Cancel() end) end
+	if flashTweenOut then pcall(function() flashTweenOut:Cancel() end) end
+
+	flashOverlay.BackgroundTransparency = 0.82
+	flashTweenIn = TweenService:Create(
+		flashOverlay,
+		TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 0.55 }
+	)
+
+	flashTweenOut = TweenService:Create(
+		flashOverlay,
+		TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 1 }
+	)
+
+	flashTweenIn:Play()
+	flashTweenIn.Completed:Once(function()
+		if flashTweenOut then flashTweenOut:Play() end
+	end)
+end
+
+local function setNormalNameVisual()
+	nameLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
+	nameStroke.Color = Color3.fromRGB(255, 255, 255)
+	nameStroke.Transparency = 0.35
+end
+
+local function setNormalPanelVisual()
+	stroke.Color = Color3.fromRGB(80, 80, 95)
+	stroke.Thickness = 2
+	accentBar.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+end
+
+local function stopAutoroll()
+	autoroll = false
+end
+
+-- Stop autoroll if:
+-- A) special stand AND has skin
+-- B) special stand AND all three stats are S
+local function checkAndStopAutorollIfNeeded(isSpecial, hasSkin, allS)
+	if autoroll and ( (isSpecial and hasSkin) or (isSpecial and allS) ) then
+		stopAutoroll()
+	end
+end
+
 local function updateHUD()
 	if not alive then return end
-	local info = parseStandValue(StandValueObj.Value)
+
+	local raw = tostring(StandValueObj.Value)
+	local info = parseStandValue(raw)
 
 	nameLabel.Text = info.name
 
-	if info.skin and info.skin ~= "" then
+	local hasSkin = info.skin ~= nil and info.skin ~= ""
+	local isSpecial = SPECIAL_STANDS[info.name] == true
+
+	if hasSkin then
 		skinLabel.Visible = true
 		skinLabel.Text = "Skin: " .. info.skin
 		traitLabel.Position = UDim2.new(0, 12, 0, 66)
+		rainbowTargets.skin = true
 	else
 		skinLabel.Visible = false
+		skinLabel.TextColor3 = Color3.fromRGB(200, 200, 210)
+		skinStroke.Color = Color3.fromRGB(255, 255, 255)
+		skinStroke.Transparency = 0.25
 		traitLabel.Position = UDim2.new(0, 12, 0, 44)
+		rainbowTargets.skin = false
 	end
 
 	traitLabel.Text = ('Trait: "%s"'):format(info.trait)
 
-	strengthText.Text = ("%s  (%d)"):format(numToLetter(info.strength), info.strength)
-	speedText.Text = ("%s  (%d)"):format(numToLetter(info.speed), info.speed)
-	specialtyText.Text = ("%s  (%d)"):format(numToLetter(info.specialty), info.specialty)
+	local strengthRank = numToLetter(info.strength)
+	local speedRank = numToLetter(info.speed)
+	local specialtyRank = numToLetter(info.specialty)
+
+	strengthText.Text = ("%s  (%d)"):format(strengthRank, info.strength)
+	speedText.Text = ("%s  (%d)"):format(speedRank, info.speed)
+	specialtyText.Text = ("%s  (%d)"):format(specialtyRank, info.specialty)
+
+	rainbowTargets.strength = (strengthRank == "S")
+	rainbowTargets.speed = (speedRank == "S")
+	rainbowTargets.specialty = (specialtyRank == "S")
+
+	if not rainbowTargets.strength then setNormalStatVisual(strengthText, strengthGlow) end
+	if not rainbowTargets.speed then setNormalStatVisual(speedText, speedGlow) end
+	if not rainbowTargets.specialty then setNormalStatVisual(specialtyText, specialtyGlow) end
+
+	specialStandActive = isSpecial
+	legendarySkinFlashyActive = isSpecial and hasSkin
+	allSStopActive = isSpecial and (strengthRank == "S" and speedRank == "S" and specialtyRank == "S")
+
+	if not specialStandActive then
+		setNormalNameVisual()
+	end
+	if not legendarySkinFlashyActive then
+		setNormalPanelVisual()
+	end
+
+	-- Stop autoroll on either condition
+	checkAndStopAutorollIfNeeded(isSpecial, hasSkin, allSStopActive)
+
+	-- Flash only when special+skin AND the roll actually changes (avoid flashing every frame)
+	local signature = string.format("%s|%s|%s|%s|%s|%s",
+		tostring(info.name),
+		tostring(info.skin),
+		tostring(info.trait),
+		tostring(info.strength),
+		tostring(info.speed),
+		tostring(info.specialty)
+	)
+
+	if signature ~= lastStandSignature then
+		lastStandSignature = signature
+
+		if legendarySkinFlashyActive then
+			triggerLegendaryFlash()
+		end
+	end
 end
 
 local function doRoll()
 	useItem:FireServer(ITEM_NAME)
 	task.delay(0.15, updateHUD)
 	task.delay(0.35, updateHUD)
-end
-
-local function stopAutoroll()
-	autoroll = false
 end
 
 local function startAutoroll()
@@ -350,9 +560,57 @@ local function killScript()
 	script:Destroy()
 end
 
--- Initial update + listen for stand changes
+-- Initial update + listeners
 updateHUD()
 table.insert(connections, StandValueObj.Changed:Connect(updateHUD))
+
+table.insert(connections, RunService.RenderStepped:Connect(function()
+	if not alive then return end
+
+	local rainbowHue = (tick() * 0.8) % 1
+
+	if rainbowTargets.skin and skinLabel.Visible then
+		applyRainbowToLabel(skinLabel, skinStroke, rainbowHue)
+	end
+
+	if rainbowTargets.strength then
+		applyRainbowToLabel(strengthText, strengthGlow, rainbowHue)
+	end
+
+	if rainbowTargets.speed then
+		applyRainbowToLabel(speedText, speedGlow, rainbowHue)
+	end
+
+	if rainbowTargets.specialty then
+		applyRainbowToLabel(specialtyText, specialtyGlow, rainbowHue)
+	end
+
+	-- Special stand name red strobe
+	if specialStandActive then
+		local pulse = (math.sin(tick() * 6) + 1) / 2
+		local darkRed = Color3.fromRGB(110, 0, 0)
+		local brightRed = Color3.fromRGB(255, 60, 60)
+		local strokeRed = Color3.fromRGB(255, 130, 130)
+
+		local textColor = lerpColor(darkRed, brightRed, pulse)
+		local outlineColor = lerpColor(Color3.fromRGB(120, 0, 0), strokeRed, pulse)
+
+		nameLabel.TextColor3 = textColor
+		nameStroke.Color = outlineColor
+		nameStroke.Transparency = 0.1
+	end
+
+	-- Flashy border/panel strobe ONLY when special + skin
+	if legendarySkinFlashyActive then
+		local pulse = (math.sin(tick() * 8) + 1) / 2
+		local panelColor = lerpColor(Color3.fromRGB(100, 0, 0), Color3.fromRGB(255, 70, 70), pulse)
+		local accentColor = lerpColor(Color3.fromRGB(140, 0, 0), Color3.fromRGB(255, 120, 120), pulse)
+
+		stroke.Color = panelColor
+		stroke.Thickness = 2 + pulse * 2
+		accentBar.BackgroundColor3 = accentColor
+	end
+end))
 
 --========================
 -- Keybinds
@@ -361,27 +619,22 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, ga
 	if not alive then return end
 	if gameProcessed then return end
 
-	-- Kill
 	if input.KeyCode == KILL_KEY then
 		killScript()
 		return
 	end
 
-	-- Autoroll toggle (')
 	if input.KeyCode == AUTOROLL_KEY then
 		toggleAutoroll()
 		return
 	end
 
-	-- Manual / Panic stop (T)
 	if input.KeyCode == KEYBIND then
 		if autoroll then
-			-- Panic stop ONLY (no extra roll)
 			stopAutoroll()
 			return
 		end
 
-		-- Normal manual roll
 		doRoll()
 		return
 	end
