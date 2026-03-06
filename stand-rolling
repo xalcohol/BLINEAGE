@@ -59,7 +59,7 @@ if skinsFolder then
 end
 
 local TRAIT_GROUPS = {
-    { rarity="Mythical",   color=Color3.fromRGB(204,80,220), traits={
+    { rarity="Mythical",   color=Color3.fromRGB(220,60,60), traits={
         {name="Transcendent", effect="+5% Damage, +5% Power Regen, +5% Global Defense"},
         {name="Feral",        effect="+10% Damage, -10% Global Defense"},
         {name="Demonic",      effect="+50% Lifesteal Efficiency"},
@@ -1764,19 +1764,19 @@ local function setWizStep(s)
         subLbl.TextWrapped=true
         subLbl.LayoutOrder=1
 
-        -- shared tooltip frame on wizWin
-        local traitTip = newLabel(wizWin, {
-            BackgroundColor3=Color3.fromRGB(18,18,30),
-            Position=UDim2.new(0,8,1,4),
-            Size=UDim2.new(1,-16,0,32),
-            Visible=false, ZIndex=40,
+        -- tooltip follows mouse on ScreenGui
+        local traitTip = newLabel(ScreenGui, {
+            BackgroundColor3=Color3.fromRGB(14,14,24),
+            Position=UDim2.new(0,0,0,0),
+            Size=UDim2.new(0,220,0,36),
+            Visible=false, ZIndex=500,
             Font=Enum.Font.Gotham, TextSize=10,
-            TextColor3=C.textDim, TextWrapped=true,
+            TextColor3=Color3.fromRGB(180,180,200), TextWrapped=true,
             Text="",
         })
         addCorner(traitTip,6)
-        addStroke(traitTip,1,Color3.fromRGB(36,36,56))
-        addPadding(traitTip,6)
+        addStroke(traitTip,1,Color3.fromRGB(44,44,66))
+        addPadding(traitTip,7)
 
         local chipOrder=0
         for _, group in ipairs(TRAIT_GROUPS) do
@@ -1806,25 +1806,33 @@ local function setWizStep(s)
                 local tv=tdata.name
                 local eff=tdata.effect
                 local sel=table.find(wData.traits,tv)~=nil
+                local gc=group.color
                 local chip=newButton(chipGrid,{
-                    BackgroundColor3=sel and Color3.fromRGB(12,12,36) or Color3.fromRGB(20,20,32),
+                    BackgroundColor3=sel and Color3.new(gc.R*0.08,gc.G*0.08,gc.B*0.08) or Color3.fromRGB(20,20,32),
                     Size=UDim2.new(0,1,0,1),
-                    Font=Enum.Font.GothamSemibold, TextSize=11,
-                    TextColor3=sel and group.color or C.textDim,
+                    Font=Enum.Font.GothamBold, TextSize=11,
+                    TextColor3=sel and Color3.fromRGB(235,235,235) or C.textDim,
                     Text=tv, ZIndex=24,
                 })
                 chip.LayoutOrder=ci
                 addCorner(chip,8)
-                addStroke(chip,1.5,sel and group.color or Color3.fromRGB(30,30,48))
+                addStroke(chip,sel and 2 or 1, sel and gc or Color3.fromRGB(30,30,48))
                 chip.MouseButton1Click:Connect(function()
                     local idx=table.find(wData.traits,tv)
                     if idx then table.remove(wData.traits,idx)
                     else table.insert(wData.traits,tv) end
                     setWizStep(2)
                 end)
-                chip.MouseEnter:Connect(function()
+                chip.MouseEnter:Connect(function(x,y)
                     traitTip.Text=tv..": "..eff
+                    traitTip.Position=UDim2.new(0,x+14,0,y+14)
                     traitTip.Visible=true
+                end)
+                chip.MouseMoved:Connect(function(x,y)
+                    traitTip.Position=UDim2.new(0,x+14,0,y+14)
+                end)
+                chip.MouseButton1Click:Connect(function()
+                    traitTip.Visible=false
                 end)
                 chip.MouseLeave:Connect(function()
                     traitTip.Visible=false
@@ -1855,6 +1863,7 @@ wizNextBtn.MouseButton1Click:Connect(function()
         })
         renderConditions()
         wizWin.Visible=false
+        settingsWin.Visible=true
     end
 end)
 wizBackBtn.MouseButton1Click:Connect(function()
@@ -1867,10 +1876,12 @@ wizSkipBtn.MouseButton1Click:Connect(function()
 end)
 wizCloseBtn.MouseButton1Click:Connect(function()
     wizWin.Visible=false
+    settingsWin.Visible=true
 end)
 
 addCondBtn.MouseButton1Click:Connect(function()
     wData={stands={},minStr="A",minSpd="A",minSpc="A",skins={},traits={}}
+    settingsWin.Visible=false
     setWizStep(0)
     task.defer(function()
         local vp = workspace.CurrentCamera.ViewportSize
