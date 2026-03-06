@@ -1408,7 +1408,7 @@ local function setWizStep(s)
             local sn=standName
             local unavail=UNAVAILABLE_STANDS[sn]==true
             local btn=newButton(grid,{
-                BackgroundColor3=unavail and Color3.fromRGB(22,22,32)
+                BackgroundColor3=unavail and Color3.fromRGB(22,8,8)
                     or sel and Color3.fromRGB(20,20,42)
                     or Color3.fromRGB(20,20,32),
                 Size=UDim2.new(0,1,0,1), -- overridden by grid layout
@@ -1492,7 +1492,7 @@ local function setWizStep(s)
                 local gradeCol = gc(g)
                 local gradebtn=newButton(gradeHolder,{
                     Size=UDim2.new(0,36,0,28),
-                    BackgroundColor3=sel and Color3.fromRGB(22,22,32) or Color3.fromRGB(17,17,24),
+                    BackgroundColor3=sel and Color3.new(gradeCol.R*0.08, gradeCol.G*0.08, gradeCol.B*0.08) or Color3.fromRGB(17,17,24),
                     Font=Enum.Font.GothamBold, TextSize=12,
                     TextColor3=sel and Color3.fromRGB(235,235,235) or Color3.fromRGB(52,52,68),
                     Text=g, ZIndex=25,
