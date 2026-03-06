@@ -201,43 +201,40 @@ local function checkStop(info)
     local allS       = g.str=="S" and g.spd=="S" and g.spc=="S"
     local traitLower = info.trait:lower()
 
-    -- Global jackpot: Transcendent + all S
     if Settings.globalStop and allS and traitLower=="transcendent" then
         return "GLOBAL_JACKPOT"
     end
 
     for _, cond in ipairs(Conditions) do
-        -- Step 2: skin match — independent of stand/stats
-        if info.skin and #(cond.skins or {}) > 0 then
-            for _, s in ipairs(cond.skins) do
+        if info.skin then
+            for _, s in ipairs(cond.skins or {}) do
                 if info.skin:lower():find(s:lower(), 1, true) then
                     return allS and "CONDITION_JACKPOT" or "CONDITION_SKIN"
                 end
             end
         end
 
-        -- Step 1: stand match
         local standMatch = false
         for _, sn in ipairs(cond.stands or {}) do
-            if info.name == sn then standMatch=true; break end
+            if info.name == sn then
+                standMatch=true
+                break
+            end
         end
 
-        -- Stats: minimum grade and above
-        local statsMatch = gradeGE(g.str, cond.minStr)
-            and gradeGE(g.spd, cond.minSpd)
-            and gradeGE(g.spc, cond.minSpc)
-
-        if standMatch and statsMatch then
-            -- Step 3: trait also matches — best result
+        if standMatch
+           and gradeGE(g.str, cond.minStr)
+           and gradeGE(g.spd, cond.minSpd)
+           and gradeGE(g.spc, cond.minSpc) then
             if #(cond.traits or {}) > 0 then
                 for _, tr in ipairs(cond.traits) do
-                    if traitLower == tr:lower() then
+                    if traitLower==tr:lower() then
                         return "CONDITION_TRAIT"
                     end
                 end
+            else
+                return "CONDITION_MET"
             end
-            -- Step 1 alone: stand + stats met, trait irrelevant
-            return "CONDITION_MET"
         end
     end
     return nil
@@ -1398,6 +1395,8 @@ local function checkCurrentStand()
     end
 end
 
+checkCurrentStand()
+
 -- autoload AFTER renderConditions exists
 if autoloadName then
     for _, cfg in ipairs(savedConfigs) do
@@ -1407,7 +1406,6 @@ if autoloadName then
         end
     end
 end
-checkCurrentStand()
 
 -- ═══════════════════════════════════════════════════════════
 --  CONDITION WIZARD
