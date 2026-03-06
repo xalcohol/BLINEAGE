@@ -903,6 +903,12 @@ cfgListScroll.ScrollBarThickness=3
 cfgListScroll.ScrollBarImageColor3=Color3.fromRGB(40,40,56)
 cfgListScroll.LayoutOrder=6; cfgListScroll.ZIndex=23
 cfgListScroll.Visible=false; cfgListScroll.Parent=cfgBody
+do
+    local cp=Instance.new("UIPadding")
+    cp.PaddingLeft=UDim.new(0,2); cp.PaddingRight=UDim.new(0,2)
+    cp.PaddingTop=UDim.new(0,3);  cp.PaddingBottom=UDim.new(0,3)
+    cp.Parent=cfgListScroll
+end
 addListLayout(cfgListScroll,4)
 
 local cfgDropOpen=false
@@ -915,6 +921,7 @@ end)
 -- ── CONFIG DATA ──────────────────────────────────────────────
 -- Configs stored as: { [name] = { conditions=..., settings=..., autoload=name } }
 local savedConfigs = {}   -- { {name=string, conditions=table, settings=table} }
+local selectedConfig = nil  -- index of currently selected config row
 local autoloadName = nil  -- name of config to autoload
 
 -- Attempt to load from a StringValue in PlayerData (persists if server saves it)
@@ -976,6 +983,12 @@ end
 
 local function renderConfigList()
     cfgListScroll:ClearAllChildren()
+    do
+        local cp=Instance.new("UIPadding")
+        cp.PaddingLeft=UDim.new(0,2); cp.PaddingRight=UDim.new(0,2)
+        cp.PaddingTop=UDim.new(0,3);  cp.PaddingBottom=UDim.new(0,3)
+        cp.Parent=cfgListScroll
+    end
     addListLayout(cfgListScroll,4)
 
     if #savedConfigs == 0 then
@@ -995,7 +1008,10 @@ local function renderConfigList()
             Size=UDim2.new(1,0,0,42), ZIndex=24,
         })
         addCorner(row,7)
-        addStroke(row,1, isAuto and Color3.fromRGB(40,100,60) or Color3.fromRGB(26,26,40))
+        addStroke(row,1.5,
+            isAuto    and Color3.fromRGB(40,100,60)  or
+            (selectedConfig==idx) and Color3.fromRGB(85,85,170) or
+            Color3.fromRGB(26,26,40))
         row.LayoutOrder=idx
 
         -- autoload indicator dot
@@ -1021,52 +1037,63 @@ local function renderConfigList()
             Text=#cfg.conditions.." condition"..(#cfg.conditions~=1 and "s" or ""), ZIndex=25,
         })
 
-        -- Load button
+        local ci=idx
+        local isSel = selectedConfig == ci
+
+        -- Whole row clickable to select
+        local rowBtn=newButton(row,{
+            BackgroundTransparency=1, Size=UDim2.new(1,0,1,0),
+            Text="", ZIndex=26,
+        })
+        rowBtn.MouseButton1Click:Connect(function()
+            selectedConfig = isSel and nil or ci
+            renderConfigList()
+        end)
+
+        -- L = Load button
         local loadBtn=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-36,0.5,0),
-            Size=UDim2.new(0,36,0,26),
+            Size=UDim2.new(0,24,0,26),
             BackgroundColor3=Color3.fromRGB(20,30,50),
-            Font=Enum.Font.GothamBold, TextSize=9,
-            TextColor3=Color3.fromRGB(85,153,238), Text="LOAD", ZIndex=26,
+            Font=Enum.Font.GothamBold, TextSize=11,
+            TextColor3=Color3.fromRGB(85,153,238), Text="L", ZIndex=27,
         })
         addCorner(loadBtn,6); addStroke(loadBtn,1,Color3.fromRGB(34,56,90))
-        local ci=idx
         loadBtn.MouseButton1Click:Connect(function()
             applyConfig(savedConfigs[ci].data)
         end)
 
-        -- Auto toggle button
-        local autoBtn2=newButton(row,{
+        -- S = Save/overwrite button
+        local saveBtn2=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
-            Position=UDim2.new(1,-68,0.5,0),
-            Size=UDim2.new(0,28,0,26),
-            BackgroundColor3=isAuto and Color3.fromRGB(12,34,20) or Color3.fromRGB(20,20,32),
-            Font=Enum.Font.GothamBold, TextSize=9,
-            TextColor3=isAuto and C.green or C.textMuted, Text="★", ZIndex=26,
+            Position=UDim2.new(1,-64,0.5,0),
+            Size=UDim2.new(0,24,0,26),
+            BackgroundColor3=Color3.fromRGB(28,22,10),
+            Font=Enum.Font.GothamBold, TextSize=11,
+            TextColor3=Color3.fromRGB(180,140,40), Text="S", ZIndex=27,
         })
-        addCorner(autoBtn2,6)
-        addStroke(autoBtn2,1, isAuto and Color3.fromRGB(26,74,40) or Color3.fromRGB(30,30,48))
-        autoBtn2.MouseButton1Click:Connect(function()
-            autoloadName = isAuto and nil or savedConfigs[ci].name
-            persistConfigs()
-            renderConfigList()
+        addCorner(saveBtn2,6); addStroke(saveBtn2,1,Color3.fromRGB(80,60,10))
+        saveBtn2.MouseButton1Click:Connect(function()
+            savedConfigs[ci].data=serializeConfig()
+            savedConfigs[ci].conditions=Conditions
+            persistConfigs(); renderConfigList()
         end)
 
         -- Delete button
         local delBtn2=newButton(row,{
             AnchorPoint=Vector2.new(1,0.5),
             Position=UDim2.new(1,-6,0.5,0),
-            Size=UDim2.new(0,26,0,26),
+            Size=UDim2.new(0,24,0,26),
             BackgroundTransparency=1,
             Font=Enum.Font.GothamBold, TextSize=11,
-            TextColor3=Color3.fromRGB(80,30,30), Text="x", ZIndex=26,
+            TextColor3=Color3.fromRGB(80,30,30), Text="x", ZIndex=27,
         })
         delBtn2.MouseButton1Click:Connect(function()
             if autoloadName==savedConfigs[ci].name then autoloadName=nil end
             table.remove(savedConfigs, ci)
-            persistConfigs()
-            renderConfigList()
+            if selectedConfig==ci then selectedConfig=nil end
+            persistConfigs(); renderConfigList()
         end)
     end
 end
