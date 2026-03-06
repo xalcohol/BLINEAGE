@@ -743,15 +743,30 @@ addCondBtn.LayoutOrder=4
 addCorner(addCondBtn,7)
 addStroke(addCondBtn,1.5,Color3.fromRGB(34,34,56))
 
+-- Refresh conditions button
+local refreshBtn=newButton(settingsScroll,{
+    BackgroundColor3=Color3.fromRGB(17,17,32),
+    Size=UDim2.new(1,0,0,28), ZIndex=23,
+    Font=Enum.Font.GothamSemibold, TextSize=11,
+    TextColor3=Color3.fromRGB(80,80,120), Text="â»  Refresh",
+})
+refreshBtn.LayoutOrder=5
+addCorner(refreshBtn,7)
+addStroke(refreshBtn,1,Color3.fromRGB(30,30,48))
+refreshBtn.MouseButton1Click:Connect(function()
+    if not condListOpen then toggleCondList() end
+    renderConditions()
+end)
+
 -- ROLL section — anchored to bottom of settings window
-sectionLabel(settingsScroll,"ROLL",5)
+sectionLabel(settingsScroll,"ROLL",6)
 local delayRow=newFrame(settingsScroll,{
     BackgroundColor3=C.rowBg,
     Size=UDim2.new(1,0,0,32), ZIndex=23,
 })
 addCorner(delayRow,7)
 addStroke(delayRow,1,C.rowBorder)
-delayRow.LayoutOrder=6
+delayRow.LayoutOrder=7
 newLabel(delayRow,{
     Position=UDim2.new(0,10,0,0), Size=UDim2.new(0.6,0,1,0),
     Font=Enum.Font.GothamSemibold, TextSize=11,
