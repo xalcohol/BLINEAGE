@@ -1755,26 +1755,20 @@ local function updateHUD()
     local spc   = SpcValue   and SpcValue.Value   or "D"
     local skin  = SkinValue  and SkinValue.Value  or ""
 
-    nameLabel.Text     = stand
+    standNameLbl.Text  = stand
     traitValLabel.Text = trait
-    if skin ~= "" then
-        skinPill.Visible=true; skinPillLabel.Text=skin
-    else
-        skinPill.Visible=false
-    end
+    strGradeLbl.Text=str; strGradeLbl.TextColor3=getGradeColor(str)
+    spdGradeLbl.Text=spd; spdGradeLbl.TextColor3=getGradeColor(spd)
+    spcGradeLbl.Text=spc; spcGradeLbl.TextColor3=getGradeColor(spc)
 
-    local grades = {str, spd, spc}
+    local function lerp(a,b,t) return a+(b-a)*t end
     local function gradeToFraction(g) return ({D=0.1,C=0.35,B=0.6,A=0.8,S=1.0})[g] or 0 end
-    for i, so in ipairs(statObjects) do
-        local g = grades[i]
-        so.gradeLbl.Text       = g
-        so.gradeLbl.TextColor3 = getGradeColor(g)
-        so.bar.Size            = UDim2.new(gradeToFraction(g),0,1,0)
-        so.bar.BackgroundColor3 = getGradeColor(g)
-    end
+    strBar.Size=UDim2.new(gradeToFraction(str),0,1,0)
+    spdBar.Size=UDim2.new(gradeToFraction(spd),0,1,0)
+    spcBar.Size=UDim2.new(gradeToFraction(spc),0,1,0)
 
     -- check stop conditions
-    if autoroll then
+    if autorollActive then
         if checkConditions(stand,str,spd,spc,trait,skin) then
             stopAutoroll("stopped")
             flashScreen(Color3.fromRGB(68,255,136))
@@ -1791,7 +1785,7 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
     local p=math.abs(math.sin((t-t0)*2))
 
     -- pulse auto button border when active
-    if autoroll then
+    if autorollActive then
         local col=lerpColor(Color3.fromRGB(34,12,12),Color3.fromRGB(56,18,18),p)
         autoBtn.BackgroundColor3=col
         autoBtnStroke.Color=lerpColor(Color3.fromRGB(102,20,20),Color3.fromRGB(200,44,44),p)
@@ -1805,9 +1799,9 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
     end
 
     -- pulse card stroke when rolling
-    if autoroll then
+    if autorollActive then
         cardStroke.Color=lerpColor(Color3.fromRGB(80,20,20),Color3.fromRGB(200,44,44),p)
-        cardStroke.Thickness=1.5+(2.5-1.5)*p
+        cardStroke.Thickness=lerpNum(1.5,2.5,p)
     else
         cardStroke.Color=C.border
         cardStroke.Thickness=1.5
@@ -1836,7 +1830,7 @@ end
 local _origToggle = toggleAutoroll
 toggleAutoroll = function()
     _origToggle()
-    if autoroll then
+    if autorollActive then
         setStatus("rolling...", Color3.fromRGB(200,68,68))
     else
         setStatus("IDLE", C.textMuted)
