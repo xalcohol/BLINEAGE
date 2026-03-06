@@ -1,0 +1,1050 @@
+--// StandRollHUD_v3  —  StarterPlayerScripts  →  LocalScript
+--// Y = kill script   |   GUI buttons for everything else
+
+--==========================================================
+--  SERVICES
+--==========================================================
+local Players          = game:GetService("Players")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
+local RunService       = game:GetService("RunService")
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService      = game:GetService("HttpService")
+local TextService      = game:GetService("TextService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+--==========================================================
+--  REMOTES / DATA PATHS
+--==========================================================
+local useItem     = ReplicatedStorage:WaitForChild("requests")
+                    :WaitForChild("character"):WaitForChild("use_item")
+local StandValue  = LocalPlayer:WaitForChild("PlayerData")
+                    :WaitForChild("SlotData"):WaitForChild("Stand")
+
+-- Stand + Skin name discovery
+local standsFolder = ReplicatedStorage:WaitForChild("assets")
+                     :WaitForChild("models"):WaitForChild("stands")
+local skinsFolder  = standsFolder:FindFirstChild("Skins")
+
+--==========================================================
+--  RUNTIME CONSTANTS  (populated from game folders)
+--==========================================================
+local STAND_NAMES = {}   -- all stand names in the game
+local SKIN_LIST   = {}   -- { {name=string, stand=string}, ... }
+
+do
+    -- Collect stand names (every direct child of "stands" that isn't "Skins")
+    for _, child in ipairs(standsFolder:GetChildren()) do
+        if child.Name ~= "Skins" then
+            table.insert(STAND_NAMES, child.Name)
+        end
+    end
+    table.sort(STAND_NAMES)
+
+    -- Collect skins — each skin model is a child of the Skins folder.
+    -- Skin models are named "<SkinName>" and have a string attribute or
+    -- a child called "Stand" indicating which stand they belong to.
+    -- If that attribute is absent we leave stand = "Unknown".
+    if skinsFolder then
+        for _, skinModel in ipairs(skinsFolder:GetChildren()) do
+            local standAttr = skinModel:GetAttribute("Stand")
+                           or (skinModel:FindFirstChild("Stand") and skinModel.Stand.Value)
+                           or "Unknown"
+            table.insert(SKIN_LIST, { name = skinModel.Name, stand = standAttr })
+        end
+        table.sort(SKIN_LIST, function(a, b) return a.name < b.name end)
+    end
+end
+
+--==========================================================
+--  SETTINGS  (runtime, editable via GUI)
+--==========================================================
+local Settings = {
+    autorollDelay  = 0.35,     -- seconds between rolls
+    globalStop     = true,     -- stop on Transcendent + All S (global, no condition needed)
+    webhookURL     = "",       -- Discord webhook URL
+    webhookOnJackpot   = true,
+    webhookOnCondition = true,
+    webhookOnGlobal    = false,
+}
+
+--==========================================================
+--  CONDITIONS
+--  Each condition = {
+--    stand    : string          (stand name)
+--    minStr   : "S"|"A"|"B"|"C"|"D"
+--    minSpd   : "S"|"A"|"B"|"C"|"D"
+--    minSpc   : "S"|"A"|"B"|"C"|"D"
+--    skins    : {string}        (any of these skins = stop, independent of stand)
+--    traits   : {string}        (if rolled trait is in this list AND stand+stats match = stop)
+--  }
+--==========================================================
+local Conditions = {}   -- populated via GUI wizard
+
+--==========================================================
+--  HELPERS
+--==========================================================
+local GRADE_ORDER = {D=1,C=2,B=3,A=4,S=5}
+
+local function numToGrade(n)
+    return ({"D","C","B","A","S"})[math.max(1,math.min(5, tonumber(n) or 1))]
+end
+
+local function gradeGE(g, minG)
+    return (GRADE_ORDER[g] or 0) >= (GRADE_ORDER[minG] or 0)
+end
+
+local function parseStand(raw)
+    raw = tostring(raw or "")
+    local info = {name="Unknown",skin=nil,trait="Unknown",strength=1,speed=1,specialty=1}
+    local ok, t = pcall(HttpService.JSONDecode, HttpService, raw)
+    if not ok then
+        local s,e = raw:find("{"), nil
+        if s then
+            local depth=0
+            for i=s,#raw do
+                local c=raw:sub(i,i)
+                if c=="{" then depth+=1 elseif c=="}" then
+                    depth-=1
+                    if depth==0 then e=i break end
+                end
+            end
+            if e then ok,t = pcall(HttpService.JSONDecode,HttpService,raw:sub(s,e)) end
+        end
+    end
+    if ok and type(t)=="table" then
+        if type(t.Name)=="string"  and t.Name~=""  then info.name     = t.Name  end
+        if type(t.Skin)=="string"  and t.Skin~=""  then info.skin     = t.Skin  end
+        if type(t.Trait)=="string" and t.Trait~="" then info.trait    = t.Trait end
+        info.strength  = math.max(1,math.min(5,tonumber(t.Strength)  or 1))
+        info.speed     = math.max(1,math.min(5,tonumber(t.Speed)     or 1))
+        info.specialty = math.max(1,math.min(5,tonumber(t.Specialty) or 1))
+    end
+    return info
+end
+
+local function lerpColor(a, b, t)
+    return Color3.new(a.R+(b.R-a.R)*t, a.G+(b.G-a.G)*t, a.B+(b.B-a.B)*t)
+end
+
+local function hsvCycle(t, s, v)
+    return Color3.fromHSV((t*0.125)%1, s, v)   -- 8-second full cycle
+end
+
+--==========================================================
+--  STOP CONDITION CHECKER
+--  Returns: reason string or nil
+--==========================================================
+local function checkStopConditions(info)
+    local grades = {
+        str = numToGrade(info.strength),
+        spd = numToGrade(info.speed),
+        spc = numToGrade(info.specialty),
+    }
+    local allS = grades.str=="S" and grades.spd=="S" and grades.spc=="S"
+    local traitLower = info.trait:lower()
+
+    -- Global stop: Transcendent + All S (no condition required)
+    if Settings.globalStop and allS and traitLower == "transcendent" then
+        return "GLOBAL_JACKPOT"
+    end
+
+    -- Per-condition checks
+    for _, cond in ipairs(Conditions) do
+        local standMatch  = info.name == cond.stand
+        local statsMatch  = gradeGE(grades.str, cond.minStr)
+                         and gradeGE(grades.spd, cond.minSpd)
+                         and gradeGE(grades.spc, cond.minSpc)
+
+        -- Skin check — independent, any skin in cond.skins stops regardless of stand
+        local skinMatch = false
+        if info.skin then
+            for _, s in ipairs(cond.skins) do
+                if info.skin:lower():find(s:lower(), 1, true) then
+                    skinMatch = true
+                    break
+                end
+            end
+        end
+        if skinMatch then
+            return allS and "CONDITION_JACKPOT" or "CONDITION_SKIN"
+        end
+
+        -- Stand + stats + optional trait
+        if standMatch and statsMatch then
+            if #cond.traits > 0 then
+                for _, tr in ipairs(cond.traits) do
+                    if traitLower == tr:lower() then
+                        return "CONDITION_TRAIT"
+                    end
+                end
+            else
+                return "CONDITION_MET"
+            end
+        end
+    end
+
+    return nil
+end
+
+--==========================================================
+--  WEBHOOK
+--==========================================================
+local function sendWebhook(info, reason)
+    if Settings.webhookURL == "" then return end
+
+    local shouldSend = false
+    if reason == "GLOBAL_JACKPOT" or reason == "CONDITION_JACKPOT" then
+        shouldSend = Settings.webhookOnJackpot
+    elseif reason == "CONDITION_MET" or reason == "CONDITION_SKIN" or reason == "CONDITION_TRAIT" then
+        shouldSend = Settings.webhookOnCondition
+    end
+    if not shouldSend then return end
+
+    local grades = {
+        numToGrade(info.strength),
+        numToGrade(info.speed),
+        numToGrade(info.specialty),
+    }
+    local body = HttpService:JSONEncode({
+        username = "StandRoll HUD",
+        embeds = {{
+            title = reason:gsub("_"," "),
+            description = string.format(
+                "**%s**%s\nTrait: %s\nSTR `%s`  SPD `%s`  SPC `%s`",
+                info.name,
+                info.skin and ("  ·  skin: **"..info.skin.."**") or "",
+                info.trait,
+                grades[1], grades[2], grades[3]
+            ),
+            color = 0xF0C030,
+        }},
+    })
+
+    task.spawn(function()
+        pcall(function()
+            HttpService:PostAsync(Settings.webhookURL, body, Enum.HttpContentType.ApplicationJson)
+        end)
+    end)
+end
+
+--==========================================================
+--  AUTOROLL ENGINE
+--==========================================================
+local alive          = true
+local autoroll       = false
+local autorollThread = 0
+local stopReason     = "IDLE"
+local connections    = {}
+
+local function stopAutoroll(reason)
+    autoroll   = false
+    stopReason = reason or "MANUAL"
+end
+
+local function startAutoroll()
+    if autoroll then return end
+    autoroll = true
+    stopReason = "IDLE"
+    autorollThread += 1
+    local myThread = autorollThread
+    task.spawn(function()
+        while alive and autoroll and autorollThread == myThread do
+            useItem:FireServer("Stand Arrow")
+            task.wait(Settings.autorollDelay)
+        end
+    end)
+end
+
+local function toggleAutoroll()
+    if autoroll then stopAutoroll("MANUAL") else startAutoroll() end
+end
+
+--==========================================================
+--  KILL
+--==========================================================
+local function killScript()
+    if not alive then return end
+    alive    = false
+    autoroll = false
+    autorollThread += 1
+    for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    table.clear(connections)
+    local hud = PlayerGui:FindFirstChild("StandRollHUD")
+    if hud then hud:Destroy() end
+    script:Destroy()
+end
+
+--==========================================================
+--  GUI CONSTRUCTION
+--==========================================================
+-- Destroy stale instance
+local existing = PlayerGui:FindFirstChild("StandRollHUD")
+if existing then existing:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name           = "StandRollHUD"
+screenGui.ResetOnSpawn   = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent         = PlayerGui
+
+------------------------------------------------------------
+--  THEME
+------------------------------------------------------------
+local C = {
+    bg        = Color3.fromRGB(17, 17, 22),
+    bgStrip   = Color3.fromRGB(13, 13, 18),
+    border    = Color3.fromRGB(30, 30, 42),
+    divider   = Color3.fromRGB(24, 24, 34),
+    row       = Color3.fromRGB(22, 22, 32),
+    rowBorder = Color3.fromRGB(28, 28, 40),
+    textDim   = Color3.fromRGB(72, 72, 96),
+    textFaint = Color3.fromRGB(37, 37, 56),
+    textLabel = Color3.fromRGB(56, 56, 80),
+    white     = Color3.fromRGB(238, 238, 245),
+    gradeS    = Color3.fromRGB(240, 192, 48),
+    gradeA    = Color3.fromRGB(85,  153, 238),
+    gradeB    = Color3.fromRGB(68,  187, 102),
+    gradeC    = Color3.fromRGB(80,  80,  104),
+    gradeD    = Color3.fromRGB(46,  46,  60),
+    barS      = Color3.fromRGB(200, 160, 40),
+    barA      = Color3.fromRGB(51,  102, 170),
+    barB      = Color3.fromRGB(42,  122, 68),
+    barC      = Color3.fromRGB(54,  54,  80),
+    barD      = Color3.fromRGB(30,  30,  40),
+    red       = Color3.fromRGB(204, 51,  51),
+    redDark   = Color3.fromRGB(20,  8,   8),
+    redBorder = Color3.fromRGB(42,  16,  16),
+    btnBg     = Color3.fromRGB(22,  22,  32),
+    btnBorder = Color3.fromRGB(36,  36,  50),
+    purple    = Color3.fromRGB(144, 85,  204),
+    gold      = Color3.fromRGB(200, 160, 32),
+}
+
+local function gradeColor(g)
+    return ({S=C.gradeS,A=C.gradeA,B=C.gradeB,C=C.gradeC,D=C.gradeD})[g] or C.gradeD
+end
+local function barColor(g)
+    return ({S=C.barS,A=C.barA,B=C.barB,C=C.barC,D=C.barD})[g] or C.barD
+end
+
+------------------------------------------------------------
+--  FACTORY HELPERS
+------------------------------------------------------------
+local function frame(props)
+    local f = Instance.new("Frame")
+    for k,v in pairs(props) do f[k]=v end
+    return f
+end
+
+local function label(props)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    for k,v in pairs(props) do l[k]=v end
+    return l
+end
+
+local function button(props)
+    local b = Instance.new("TextButton")
+    for k,v in pairs(props) do b[k]=v end
+    return b
+end
+
+local function corner(r, parent)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r)
+    c.Parent = parent
+    return c
+end
+
+local function stroke(thickness, color, parent)
+    local s = Instance.new("UIStroke")
+    s.Thickness = thickness
+    s.Color = color
+    s.Parent = parent
+    return s
+end
+
+local function makeDraggable(dragFrame, targetFrame)
+    dragFrame.Active = true
+    local dragging, dragStart, startPos
+    dragFrame.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            dragging  = true
+            dragStart = inp.Position
+            startPos  = targetFrame.Position
+            inp.Changed:Connect(function()
+                if inp.UserInputState == Enum.UserInputState.End then dragging=false end
+            end)
+        end
+    end)
+    local dragInput
+    dragFrame.InputChanged:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            dragInput = inp
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if inp == dragInput and dragging then
+            local d = inp.Position - dragStart
+            targetFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + d.X,
+                startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
+end
+
+------------------------------------------------------------
+--  MAIN HUD  (card + strip, side by side in a holder)
+------------------------------------------------------------
+local hudHolder = frame{
+    Name             = "HUDHolder",
+    BackgroundTransparency = 1,
+    AnchorPoint      = Vector2.new(1, 0.5),
+    Position         = UDim2.new(1, -20, 0.5, 0),
+    Size             = UDim2.new(0, 362, 0, 200),  -- resized after card built
+    ZIndex           = 10,
+    Parent           = screenGui,
+}
+
+-- ── CARD ──────────────────────────────────────
+local CARD_W, CARD_H = 320, 200   -- height set after content
+
+local cardFrame = frame{
+    Name             = "Card",
+    BackgroundColor3 = C.bg,
+    BorderSizePixel  = 0,
+    Position         = UDim2.new(0,0,0,0),
+    Size             = UDim2.new(0, CARD_W, 1, 0),
+    ZIndex           = 10,
+    Parent           = hudHolder,
+}
+corner(18, cardFrame)
+local cardStroke = stroke(1.5, C.border, cardFrame)
+
+-- invisible drag handle across top of card
+local dragHandle = frame{
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Position         = UDim2.new(0,0,0,0),
+    Size             = UDim2.new(0, CARD_W, 0, 28),
+    ZIndex           = 30,
+    Parent           = cardFrame,
+}
+makeDraggable(dragHandle, hudHolder)
+
+-- ── CARD CONTENT ──────────────────────────────
+local PAD = 18
+local yOff = 26   -- padding-top (room for drag handle)
+
+-- Stand name
+local nameLabel = label{
+    Position         = UDim2.new(0,PAD,0,yOff),
+    Size             = UDim2.new(1,-PAD*2-80,0,28),
+    Font             = Enum.Font.GothamBlack,
+    TextSize         = 21,
+    TextColor3       = C.white,
+    TextXAlignment   = Enum.TextXAlignment.Left,
+    TextTruncate     = Enum.TextTruncate.AtEnd,
+    Text             = "—",
+    ZIndex           = 12,
+    Parent           = cardFrame,
+}
+
+-- Skin pill
+local skinPill = frame{
+    AnchorPoint      = Vector2.new(1, 0),
+    Position         = UDim2.new(1, -PAD, 0, yOff+3),
+    Size             = UDim2.new(0, 80, 0, 20),
+    BackgroundColor3 = Color3.fromRGB(42, 28, 4),
+    BorderSizePixel  = 0,
+    Visible          = false,
+    ZIndex           = 13,
+    Parent           = cardFrame,
+}
+corner(100, skinPill)
+local skinPillStroke = stroke(1, Color3.fromRGB(200, 134, 10), skinPill)
+local skinPillLabel = label{
+    Size             = UDim2.new(1,-16,1,0),
+    Position         = UDim2.new(0,8,0,0),
+    Font             = Enum.Font.GothamBold,
+    TextSize         = 10,
+    TextColor3       = Color3.fromRGB(196, 136, 32),
+    Text             = "",
+    ZIndex           = 14,
+    Parent           = skinPill,
+}
+
+yOff += 32
+
+-- Trait row
+local traitCapLabel = label{
+    Position         = UDim2.new(0,PAD,0,yOff),
+    Size             = UDim2.new(0,36,0,14),
+    Font             = Enum.Font.GothamBold,
+    TextSize         = 9,
+    TextColor3       = C.textFaint,
+    Text             = "TRAIT",
+    ZIndex           = 12,
+    Parent           = cardFrame,
+}
+local traitValLabel = label{
+    Position         = UDim2.new(0,PAD+40,0,yOff),
+    Size             = UDim2.new(1,-PAD*2-40,0,14),
+    Font             = Enum.Font.Gotham,
+    TextSize         = 12,
+    TextColor3       = C.textDim,
+    TextXAlignment   = Enum.TextXAlignment.Left,
+    Text             = "—",
+    ZIndex           = 12,
+    Parent           = cardFrame,
+}
+
+yOff += 22
+
+-- Stat rows: STR / SPD / SPC
+local statObjects = {}
+local GRADE_NAMES_LIST = {"STR","SPD","SPC"}
+
+for i, statName in ipairs(GRADE_NAMES_LIST) do
+    local rowY = yOff + (i-1)*22
+
+    local lbl = label{
+        Position     = UDim2.new(0,PAD,0,rowY),
+        Size         = UDim2.new(0,24,0,18),
+        Font         = Enum.Font.GothamBold,
+        TextSize     = 9,
+        TextColor3   = C.textFaint,
+        Text         = statName,
+        ZIndex       = 12,
+        Parent       = cardFrame,
+    }
+
+    local barBg = frame{
+        Position     = UDim2.new(0,PAD+28,0,rowY+7),
+        Size         = UDim2.new(1,-PAD*2-28-28,0,2),
+        BackgroundColor3 = Color3.fromRGB(24,24,38),
+        BorderSizePixel  = 0,
+        ZIndex       = 12,
+        Parent       = cardFrame,
+    }
+    corner(100, barBg)
+
+    local barFill = frame{
+        Size         = UDim2.new(1,0,1,0),
+        BackgroundColor3 = C.barD,
+        BorderSizePixel  = 0,
+        ZIndex       = 13,
+        Parent       = barBg,
+    }
+    corner(100, barFill)
+
+    local gradeLbl = label{
+        AnchorPoint  = Vector2.new(1,0),
+        Position     = UDim2.new(1,-PAD,0,rowY-1),
+        Size         = UDim2.new(0,20,0,20),
+        Font         = Enum.Font.Code,
+        TextSize     = 17,
+        TextColor3   = C.gradeD,
+        Text         = "D",
+        ZIndex       = 12,
+        Parent       = cardFrame,
+    }
+
+    statObjects[i] = { bar=barFill, gradeLbl=gradeLbl, lbl=lbl }
+end
+
+yOff += 3 * 22 + 6
+
+-- Divider
+local divider = frame{
+    Position     = UDim2.new(0,PAD,0,yOff),
+    Size         = UDim2.new(1,-PAD*2,0,1),
+    BackgroundColor3 = C.divider,
+    BorderSizePixel  = 0,
+    ZIndex       = 12,
+    Parent       = cardFrame,
+}
+
+yOff += 12
+
+-- Bottom bar
+local autoBtn = button{
+    Position         = UDim2.new(0,PAD,0,yOff),
+    Size             = UDim2.new(0,120,0,30),
+    BackgroundColor3 = C.btnBg,
+    BorderSizePixel  = 0,
+    Font             = Enum.Font.GothamBold,
+    TextSize         = 11,
+    TextColor3       = C.textDim,
+    Text             = "AUTO  OFF",
+    ZIndex           = 13,
+    Parent           = cardFrame,
+}
+corner(8, autoBtn)
+local autoBtnStroke = stroke(1.5, C.btnBorder, autoBtn)
+
+local killBtn = button{
+    Position         = UDim2.new(0,PAD+126,0,yOff),
+    Size             = UDim2.new(0,30,0,30),
+    BackgroundColor3 = C.redDark,
+    BorderSizePixel  = 0,
+    Font             = Enum.Font.GothamBold,
+    TextSize         = 13,
+    TextColor3       = Color3.fromRGB(90,32,32),
+    Text             = "✕",
+    ZIndex           = 13,
+    Parent           = cardFrame,
+}
+corner(8, killBtn)
+stroke(1.5, C.redBorder, killBtn)
+
+local statusLabel = label{
+    AnchorPoint      = Vector2.new(1,0),
+    Position         = UDim2.new(1,-PAD,0,yOff+3),
+    Size             = UDim2.new(0,100,0,14),
+    Font             = Enum.Font.GothamSemibold,
+    TextSize         = 11,
+    TextColor3       = C.textFaint,
+    TextXAlignment   = Enum.TextXAlignment.Right,
+    Text             = "IDLE",
+    ZIndex           = 13,
+    Parent           = cardFrame,
+}
+local hintLabel = label{
+    AnchorPoint      = Vector2.new(1,0),
+    Position         = UDim2.new(1,-PAD,0,yOff+18),
+    Size             = UDim2.new(0,100,0,11),
+    Font             = Enum.Font.Gotham,
+    TextSize         = 9,
+    TextColor3       = Color3.fromRGB(26,26,40),
+    TextXAlignment   = Enum.TextXAlignment.Right,
+    Text             = "Y  kill script",
+    ZIndex           = 13,
+    Parent           = cardFrame,
+}
+
+yOff += 44
+
+-- Resize card and holder to fit content
+CARD_H = yOff
+cardFrame.Size   = UDim2.new(0, CARD_W, 0, CARD_H)
+hudHolder.Size   = UDim2.new(0, CARD_W + 42, 0, CARD_H)
+
+-- ── TAB STRIP ─────────────────────────────────
+local tabStrip = frame{
+    Name             = "TabStrip",
+    BackgroundColor3 = C.bgStrip,
+    BorderSizePixel  = 0,
+    Position         = UDim2.new(0, CARD_W, 0, 0),
+    Size             = UDim2.new(0, 42, 1, 0),
+    ZIndex           = 10,
+    Parent           = hudHolder,
+}
+corner(18, tabStrip)
+-- The strip shares the same stroke reference as the card (set via glow system)
+local stripStroke = stroke(1.5, C.border, tabStrip)
+
+makeDraggable(tabStrip, hudHolder)
+
+-- Strip tab buttons
+local function makeTabBtn(iconText, yPos)
+    local btn = button{
+        AnchorPoint      = Vector2.new(0.5, 0),
+        Position         = UDim2.new(0.5, 0, 0, yPos),
+        Size             = UDim2.new(0, 30, 0, 30),
+        BackgroundColor3 = Color3.fromRGB(0,0,0),
+        BackgroundTransparency = 1,
+        BorderSizePixel  = 0,
+        Font             = Enum.Font.Gotham,
+        TextSize         = 14,
+        TextColor3       = Color3.fromRGB(56,56,80),
+        Text             = iconText,
+        ZIndex           = 12,
+        Parent           = tabStrip,
+    }
+    corner(7, btn)
+    return btn
+end
+
+local settingsTabBtn = makeTabBtn("⚙", 10)
+local webhookTabBtn  = makeTabBtn("◉", 46)
+
+-- Kill button at strip bottom
+local stripKillBtn = button{
+    AnchorPoint      = Vector2.new(0.5, 1),
+    Position         = UDim2.new(0.5, 0, 1, -10),
+    Size             = UDim2.new(0, 30, 0, 30),
+    BackgroundColor3 = Color3.fromRGB(0,0,0),
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Font             = Enum.Font.GothamBold,
+    TextSize         = 13,
+    TextColor3       = Color3.fromRGB(90,32,32),
+    Text             = "✕",
+    ZIndex           = 12,
+    Parent           = tabStrip,
+}
+corner(7, stripKillBtn)
+
+------------------------------------------------------------
+--  SETTINGS WINDOW
+------------------------------------------------------------
+-- TODO: build full settings window with:
+--   • Conditions dropdown (list of Conditions[])
+--   • Add Condition button → opens wizard frames
+--   • Global Stop toggle
+--   • Roll delay row
+-- (stub frame for now — full implementation next pass)
+local settingsWin = frame{
+    Name             = "SettingsWin",
+    BackgroundColor3 = C.bg,
+    BorderSizePixel  = 0,
+    Position         = UDim2.new(1, 10, 0, 0),   -- right of HUD, repositioned on open
+    Size             = UDim2.new(0, 290, 0, 400),
+    Visible          = false,
+    ZIndex           = 20,
+    Parent           = screenGui,
+}
+corner(16, settingsWin)
+local settingsStroke = stroke(1.5, C.border, settingsWin)
+-- title bar
+local settingsTitleBar = frame{
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Size             = UDim2.new(1,0,0,36),
+    ZIndex           = 21,
+    Parent           = settingsWin,
+}
+makeDraggable(settingsTitleBar, settingsWin)
+label{
+    Position     = UDim2.new(0,14,0,0),
+    Size         = UDim2.new(1,-34,1,0),
+    Font         = Enum.Font.GothamBold,
+    TextSize     = 10,
+    TextColor3   = C.textFaint,
+    TextXAlignment=Enum.TextXAlignment.Left,
+    Text         = "SETTINGS",
+    ZIndex       = 22,
+    Parent       = settingsTitleBar,
+}
+local settingsCloseBtn = button{
+    AnchorPoint  = Vector2.new(1,0.5),
+    Position     = UDim2.new(1,-10,0.5,0),
+    Size         = UDim2.new(0,20,0,20),
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Font         = Enum.Font.GothamBold,
+    TextSize     = 12,
+    TextColor3   = Color3.fromRGB(51,51,72),
+    Text         = "✕",
+    ZIndex       = 22,
+    Parent       = settingsTitleBar,
+}
+-- (Body: conditions list, global stop toggle, delay row — built in next pass)
+
+------------------------------------------------------------
+--  WEBHOOK WINDOW
+------------------------------------------------------------
+local webhookWin = frame{
+    Name             = "WebhookWin",
+    BackgroundColor3 = C.bg,
+    BorderSizePixel  = 0,
+    Position         = UDim2.new(1, 10, 0, 0),
+    Size             = UDim2.new(0, 260, 0, 260),
+    Visible          = false,
+    ZIndex           = 20,
+    Parent           = screenGui,
+}
+corner(16, webhookWin)
+local webhookStroke = stroke(1.5, C.border, webhookWin)
+local webhookTitleBar = frame{
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Size             = UDim2.new(1,0,0,36),
+    ZIndex           = 21,
+    Parent           = webhookWin,
+}
+makeDraggable(webhookTitleBar, webhookWin)
+label{
+    Position     = UDim2.new(0,14,0,0),
+    Size         = UDim2.new(1,-34,1,0),
+    Font         = Enum.Font.GothamBold,
+    TextSize     = 10,
+    TextColor3   = C.textFaint,
+    TextXAlignment=Enum.TextXAlignment.Left,
+    Text         = "WEBHOOK",
+    ZIndex       = 22,
+    Parent       = webhookTitleBar,
+}
+local webhookCloseBtn = button{
+    AnchorPoint  = Vector2.new(1,0.5),
+    Position     = UDim2.new(1,-10,0.5,0),
+    Size         = UDim2.new(0,20,0,20),
+    BackgroundTransparency = 1,
+    BorderSizePixel  = 0,
+    Font         = Enum.Font.GothamBold,
+    TextSize     = 12,
+    TextColor3   = Color3.fromRGB(51,51,72),
+    Text         = "✕",
+    ZIndex       = 22,
+    Parent       = webhookTitleBar,
+}
+-- (Body: URL input, test button, notify toggles — built in next pass)
+
+------------------------------------------------------------
+--  WINDOW OPEN/CLOSE
+------------------------------------------------------------
+local function openWin(win, refFrame)
+    local rPos = refFrame.AbsolutePosition
+    local rSz  = refFrame.AbsoluteSize
+    win.Position = UDim2.new(0, rPos.X + rSz.X + 10, 0, rPos.Y)
+    win.Visible  = true
+end
+
+local function toggleWin(win, btn, refFrame)
+    if win.Visible then
+        win.Visible = false
+        btn.BackgroundTransparency = 1
+        btn.TextColor3 = Color3.fromRGB(56,56,80)
+    else
+        openWin(win, refFrame)
+        btn.BackgroundTransparency = 0.93
+        btn.TextColor3 = C.white
+    end
+end
+
+settingsTabBtn.MouseButton1Click:Connect(function()
+    toggleWin(settingsWin, settingsTabBtn, hudHolder)
+end)
+webhookTabBtn.MouseButton1Click:Connect(function()
+    toggleWin(webhookWin, webhookTabBtn, hudHolder)
+end)
+settingsCloseBtn.MouseButton1Click:Connect(function()
+    settingsWin.Visible = false
+    settingsTabBtn.BackgroundTransparency = 1
+    settingsTabBtn.TextColor3 = Color3.fromRGB(56,56,80)
+end)
+webhookCloseBtn.MouseButton1Click:Connect(function()
+    webhookWin.Visible = false
+    webhookTabBtn.BackgroundTransparency = 1
+    webhookTabBtn.TextColor3 = Color3.fromRGB(56,56,80)
+end)
+autoBtn.MouseButton1Click:Connect(toggleAutoroll)
+killBtn.MouseButton1Click:Connect(killScript)
+stripKillBtn.MouseButton1Click:Connect(killScript)
+
+------------------------------------------------------------
+--  FLASH OVERLAY
+------------------------------------------------------------
+local flashFrame = frame{
+    BackgroundColor3     = Color3.fromRGB(255,30,30),
+    BackgroundTransparency = 1,
+    BorderSizePixel      = 0,
+    Size                 = UDim2.new(1,0,1,0),
+    ZIndex               = 50,
+    Parent               = screenGui,
+}
+local function triggerFlash()
+    flashFrame.BackgroundTransparency = 0.8
+    TweenService:Create(flashFrame, TweenInfo.new(0.07), {BackgroundTransparency=0.5}):Play()
+    task.delay(0.07, function()
+        TweenService:Create(flashFrame, TweenInfo.new(0.5), {BackgroundTransparency=1}):Play()
+    end)
+end
+
+--==========================================================
+--  HUD UPDATE  (called on StandValue.Changed)
+--==========================================================
+local lastSig   = ""
+local lastGrades= {str="D",spd="D",spc="D"}
+
+local rainbowTargets = {str=false,spd=false,spc=false,skin=false}
+
+local function updateHUD()
+    if not alive then return end
+    local info = parseStand(StandValue.Value)
+
+    nameLabel.Text = info.name
+
+    -- Skin pill
+    if info.skin and info.skin ~= "" then
+        local tw = TextService:GetTextSize(info.skin, 10, Enum.Font.GothamBold, Vector2.new(300,20)).X
+        skinPill.Size    = UDim2.new(0, tw+16, 0, 20)
+        skinPillLabel.Text = info.skin
+        skinPill.Visible = true
+        rainbowTargets.skin = true
+    else
+        skinPill.Visible = false
+        rainbowTargets.skin = false
+    end
+
+    -- Trait
+    traitValLabel.Text      = info.trait ~= "Unknown" and info.trait or "—"
+    traitValLabel.TextColor3= info.trait:lower()=="transcendent" and C.purple or C.textDim
+
+    -- Stats
+    local grades = {
+        str = numToGrade(info.strength),
+        spd = numToGrade(info.speed),
+        spc = numToGrade(info.specialty),
+    }
+    lastGrades = grades
+    local allS = grades.str=="S" and grades.spd=="S" and grades.spc=="S"
+
+    for i, key in ipairs({"str","spd","spc"}) do
+        local g   = grades[key]
+        local obj = statObjects[i]
+        rainbowTargets[key] = (g=="S")
+        obj.gradeLbl.Text       = g
+        obj.gradeLbl.TextColor3 = gradeColor(g)
+        obj.bar.BackgroundColor3= barColor(g)
+        obj.bar.Size = UDim2.new(GRADE_ORDER[g]/5, 0, 1, 0)
+    end
+
+    -- Stand name pulse for specials (re-evaluated each update)
+    -- (driven by RenderStepped below)
+
+    -- Signature check — only act on new rolls
+    local sig = string.format("%s|%s|%s|%d|%d|%d",
+        info.name, tostring(info.skin), info.trait,
+        info.strength, info.speed, info.specialty)
+
+    if sig ~= lastSig then
+        lastSig = sig
+
+        -- Flash on special stands that have skins
+        local isSpecial = false  -- fill in from SPECIAL_STANDS if desired
+        if isSpecial and info.skin then triggerFlash() end
+
+        -- Check stop conditions
+        if autoroll then
+            local reason = checkStopConditions(info)
+            if reason then
+                stopAutoroll(reason)
+                sendWebhook(info, reason)
+            end
+        end
+    end
+end
+
+table.insert(connections, StandValue.Changed:Connect(updateHUD))
+updateHUD()
+
+--==========================================================
+--  KEYBIND
+--==========================================================
+table.insert(connections, UserInputService.InputBegan:Connect(function(inp, gp)
+    if not alive or gp then return end
+    if inp.KeyCode == Enum.KeyCode.Y then killScript() end
+end))
+
+--==========================================================
+--  GLOW SYSTEM  (RenderStepped)
+--  All windows share the same border color at the same tick.
+--  Triple-S → slow rainbow cycle on all borders simultaneously.
+--  Otherwise → average grade color, smoothly lerped.
+--==========================================================
+local glowR, glowG, glowB = 30, 30, 42
+local targetR, targetG, targetB = 30, 30, 42
+
+local GRADE_GLOW = {
+    S = {200,160,40},
+    A = {51,102,170},
+    B = {42,122,68},
+    C = {54,54,80},
+    D = {30,30,42},
+}
+
+local function lerpN(a,b,t) return a+(b-a)*t end
+
+local allStrokes = {cardStroke, stripStroke, settingsStroke, webhookStroke}
+
+table.insert(connections, RunService.RenderStepped:Connect(function()
+    if not alive then return end
+    local t = tick()
+
+    local allS = rainbowTargets.str and rainbowTargets.spd and rainbowTargets.spc
+
+    -- Compute target glow color
+    if allS then
+        -- Rainbow: drive all strokes from same hue tick
+        local hue = (t * 0.125) % 1
+        local c = Color3.fromHSV(hue, 0.88, 0.95)
+        local glow = Color3.fromHSV(hue, 0.88, 0.6)
+        for _, s in ipairs(allStrokes) do
+            s.Color = c
+        end
+        -- Grade letters rainbow
+        for i, key in ipairs({"str","spd","spc"}) do
+            statObjects[i].gradeLbl.TextColor3 = Color3.fromHSV(hue, 0.88, 1)
+        end
+        -- Skin pill
+        if rainbowTargets.skin and skinPill.Visible then
+            skinPillStroke.Color = Color3.fromHSV(hue, 0.88, 0.95)
+            skinPill.BackgroundColor3 = Color3.fromHSV(hue, 0.88, 0.25)
+        end
+    else
+        -- Average grade color
+        local rr,gg,bb = 0,0,0
+        for _, key in ipairs({"str","spd","spc"}) do
+            local gc = GRADE_GLOW[lastGrades[key]] or GRADE_GLOW.D
+            rr += gc[1]/3; gg += gc[2]/3; bb += gc[3]/3
+        end
+        targetR,targetG,targetB = rr,gg,bb
+        glowR = lerpN(glowR, targetR, 0.055)
+        glowG = lerpN(glowG, targetG, 0.055)
+        glowB = lerpN(glowB, targetB, 0.055)
+        local c = Color3.fromRGB(math.round(glowR),math.round(glowG),math.round(glowB))
+        for _, s in ipairs(allStrokes) do s.Color = c end
+        -- Restore grade letter colors (non-rainbow)
+        for i, key in ipairs({"str","spd","spc"}) do
+            statObjects[i].gradeLbl.TextColor3 = gradeColor(lastGrades[key])
+        end
+        -- Skin pill normal
+        if skinPill.Visible then
+            skinPillStroke.Color = Color3.fromRGB(200,134,10)
+            skinPill.BackgroundColor3 = Color3.fromRGB(42,28,4)
+        end
+    end
+
+    -- Special stand name pulse
+    -- (isSpecial driven by condition check — TODO hook in)
+    -- nameLabel.TextColor3 = ...
+
+    -- Auto button pulse
+    if autoroll then
+        local p = (math.sin(t*4)+1)*0.5
+        autoBtn.BackgroundColor3 = lerpColor(Color3.fromRGB(34,12,12), Color3.fromRGB(56,18,18), p)
+        autoBtnStroke.Color      = lerpColor(Color3.fromRGB(102,20,20), Color3.fromRGB(200,44,44), p)
+        autoBtn.TextColor3       = Color3.fromRGB(200,68,68)
+        autoBtn.Text             = "AUTO  ON"
+        statusLabel.Text         = "rolling..."
+        statusLabel.TextColor3   = Color3.fromRGB(170,40,40)
+    else
+        autoBtn.BackgroundColor3 = C.btnBg
+        autoBtnStroke.Color      = C.btnBorder
+        autoBtn.TextColor3       = C.textDim
+        autoBtn.Text             = "AUTO  OFF"
+
+        local sc, st = C.textFaint, "IDLE"
+        if stopReason == "GLOBAL_JACKPOT" or stopReason == "CONDITION_JACKPOT" then
+            sc=C.gold;    st="\u2746  jackpot!"
+        elseif stopReason == "CONDITION_TRAIT" then
+            sc=C.purple;  st="\u2605  trait match"
+        elseif stopReason == "CONDITION_MET" then
+            sc=C.gradeA;  st="\u25c8  condition met"
+        elseif stopReason == "CONDITION_SKIN" then
+            sc=C.red;     st="\u25c8  rare skin"
+        elseif stopReason == "MANUAL" then
+            sc=Color3.fromRGB(50,50,70); st="stopped"
+        end
+        statusLabel.TextColor3 = sc
+        statusLabel.Text       = st
+    end
+end))
