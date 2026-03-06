@@ -964,8 +964,12 @@ local function applyConfig(cfg)
     if cfg.globalStop    ~= nil then Settings.globalStop    = cfg.globalStop    end
     if cfg.autorollDelay ~= nil then Settings.autorollDelay = cfg.autorollDelay end
     if cfg.webhookURL    ~= nil then Settings.webhookURL    = cfg.webhookURL
-        cfgNameBox.Text = cfg.webhookURL  -- update URL box if open
+        cfgNameBox.Text = cfg.webhookURL
     end
+    -- Force condition list visible and re-render
+    condListOpen = true
+    condListContainer.Visible = true
+    condChevBtn.Text = "â¼"
     renderConditions()
 end
 
@@ -1038,6 +1042,9 @@ local function renderConfigList()
         })
         rowClickBtn.MouseButton1Click:Connect(function()
             selectedConfig = (selectedConfig==ci) and nil or ci
+            if selectedConfig==ci then
+                applyConfig(savedConfigs[ci].data)
+            end
             renderConfigList()
         end)
 
@@ -1066,8 +1073,9 @@ local function renderConfigList()
         })
         addCorner(saveBtn2,6); addStroke(saveBtn2,1,Color3.fromRGB(80,60,10))
         saveBtn2.MouseButton1Click:Connect(function()
-            savedConfigs[ci].data=serializeConfig()
-            savedConfigs[ci].conditions=Conditions
+            local snap=serializeConfig()
+            savedConfigs[ci].data=snap
+            savedConfigs[ci].conditions=snap.conditions
             persistConfigs(); renderConfigList()
         end)
 
@@ -1092,7 +1100,8 @@ end
 saveConfigBtn.MouseButton1Click:Connect(function()
     local name = cfgNameBox.Text
     if name=="" then name="Config "..(#savedConfigs+1) end
-    table.insert(savedConfigs,{name=name, data=serializeConfig(), conditions=Conditions})
+    local snap=serializeConfig()
+    table.insert(savedConfigs,{name=name, data=snap, conditions=snap.conditions})
     persistConfigs(); renderConfigList()
     cfgNameBox.Text = ""
     if not cfgDropOpen then
