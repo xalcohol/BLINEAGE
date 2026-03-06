@@ -58,10 +58,51 @@ if skinsFolder then
     table.sort(SKIN_LIST, function(a, b) return a.name < b.name end)
 end
 
-local TRAITS = {
-    "Transcendent","Ruthless","Sadistic","Lucky","Balanced",
-    "Swift","Resilient","Volatile","Cunning","Fierce",
+local TRAIT_GROUPS = {
+    { rarity="Mythical",   color=Color3.fromRGB(220,60,60), traits={
+        {name="Transcendent", effect="+5% Damage, +5% Power Regen, +5% Global Defense"},
+        {name="Feral",        effect="+10% Damage, -10% Global Defense"},
+        {name="Demonic",      effect="+50% Lifesteal Efficiency"},
+    }},
+    { rarity="Legendary",  color=Color3.fromRGB(220,160,40), traits={
+        {name="Cursed",       effect="+4% Damage, +4% Power Regen, +4% Global Defense"},
+        {name="Dominant",     effect="Deal +25% more damage to opponents that haven't hit you"},
+        {name="Artistic",     effect="Block Breaking applies vulnerability for 5s (+20% damage taken)"},
+        {name="Methodical",   effect="Perfect Blocking replenishes +15% power and gives a small speed boost"},
+    }},
+    { rarity="Rare",       color=Color3.fromRGB(80,140,220), traits={
+        {name="Compassionate",effect="Healing output is +15% more effective"},
+        {name="Furious",      effect="Deal +10% more damage below 30% health"},
+        {name="Determined",   effect="While above 70% HP, deal +4% more damage"},
+        {name="Durable",      effect="Status effect damage is +100% less potent"},
+        {name="Fearful",      effect="Being block broken grants +20% defense for 2 seconds"},
+    }},
+    { rarity="Uncommon",   color=Color3.fromRGB(80,200,120), traits={
+        {name="Curious",      effect="Gain +10% more evasive gain"},
+        {name="Kind",         effect="Healing output is +10% more effective"},
+        {name="Astute",       effect="Blocked attacks deal +10% chip damage"},
+        {name="Predictive",   effect="Counter skills deal +10% more damage"},
+    }},
+    { rarity="Common",     color=Color3.fromRGB(160,160,180), traits={
+        {name="Firm",         effect="Blocking attacks provides you power"},
+        {name="Happy",        effect="Increase health regeneration by +5%"},
+        {name="Energetic",    effect="Gain +10% more power regeneration"},
+        {name="Arrogant",     effect="Gain +5% more damage at maximum health"},
+        {name="Erratic",      effect="Dodging an attack gives back +5% power"},
+        {name="Cowardly",     effect="Decreases effectiveness of being slowed while low on health"},
+    }},
+    { rarity="Unclassified",color=Color3.fromRGB(100,100,100), traits={
+        {name="Suffocating",  effect="Effect unknown"},
+        {name="Slugger",      effect="Block Breaking skills deal +10% more damage"},
+    }},
 }
+-- flat list for compatibility
+local TRAITS = {}
+for _, group in ipairs(TRAIT_GROUPS) do
+    for _, t in ipairs(group.traits) do
+        table.insert(TRAITS, t.name)
+    end
+end
 
 -- ═══════════════════════════════════════════════════════════
 --  SETTINGS
@@ -994,11 +1035,13 @@ local savedConfigs = {}
 local selectedConfig = nil
 local autoloadName = nil
 
-local cfgStore = LocalPlayer:WaitForChild("PlayerData"):FindFirstChild("HUDConfigs")
-if not cfgStore then
-    cfgStore = Instance.new("StringValue")
-    cfgStore.Name = "HUDConfigs"
-    cfgStore.Parent = LocalPlayer:WaitForChild("PlayerData")
+local CFG_FILE = "StandRollHUD_configs.json"
+local function fileRead()
+    local ok, data = pcall(readfile, CFG_FILE)
+    return (ok and type(data)=="string") and data or ""
+end
+local function fileWrite(data)
+    pcall(writefile, CFG_FILE, data)
 end
 
 local function serializeConfig()
@@ -1063,9 +1106,7 @@ local function persistConfigs()
         table.insert(t.configs, cfg)
     end
     local ok, encoded = pcall(HttpService.JSONEncode, HttpService, t)
-    if ok then
-        cfgStore.Value = encoded
-    end
+    if ok then fileWrite(encoded) end
 end
 
 local function renderConfigList()
@@ -1129,7 +1170,9 @@ local function renderConfigList()
             Text="", ZIndex=26,
         })
         rowClickBtn.MouseButton1Click:Connect(function()
-            selectedConfig = (selectedConfig==ci) and nil or ci
+            -- clicking row sets/unsets autoload for this config
+            autoloadName = (autoloadName==savedConfigs[ci].name) and nil or savedConfigs[ci].name
+            persistConfigs()
             renderConfigList()
         end)
 
@@ -1150,6 +1193,7 @@ local function renderConfigList()
             applyConfig(data)
             selectedConfig = ci
             renderConfigList()
+            checkCurrentStand()
         end)
 
         local saveBtn2=newButton(row,{
@@ -1207,7 +1251,7 @@ end)
 
 -- Load persisted configs from StringValue on start
 do
-    local raw = cfgStore.Value
+    local raw = fileRead()
     if raw and raw~="" then
         local ok, t = pcall(HttpService.JSONDecode, HttpService, raw)
         if ok and type(t)=="table" then
@@ -1305,8 +1349,10 @@ renderConditions = function()
         end
 
         if #(cond.traits or {})>0 then
-            makeTag(table.concat(cond.traits,", "),
-                Color3.fromRGB(8,24,32), Color3.fromRGB(34,136,170), 3)
+            local tDisplay = #cond.traits<=2
+                and table.concat(cond.traits,", ")
+                or (#cond.traits.." traits")
+            makeTag(tDisplay, Color3.fromRGB(8,24,32), Color3.fromRGB(34,136,170), 3)
         end
 
         local delBtn=newButton(item,{
@@ -1337,6 +1383,19 @@ local condHeaderClickBtn=newButton(condHeaderRow,{
 })
 condHeaderClickBtn.MouseButton1Click:Connect(toggleCondList)
 renderConditions()
+
+-- Check if currently equipped stand already meets a condition
+local function checkCurrentStand()
+    if #Conditions == 0 then return end
+    local info = parseStand(StandValue.Value)
+    if info.name == "Unknown" or info.name == "" then return end
+    local result = checkStop(info)
+    if result then
+        stopReason = result  -- render loop picks this up every frame
+    end
+end
+
+checkCurrentStand()
 
 -- autoload AFTER renderConditions exists
 if autoloadName then
@@ -1723,41 +1782,93 @@ local function setWizStep(s)
         subLbl.TextWrapped=true
         subLbl.LayoutOrder=1
 
-        local chipGrid=newFrame(wizScroll,{
-            BackgroundTransparency=1,
-            Size=UDim2.new(1,-28,0,0), ZIndex=23,
+        -- tooltip follows mouse on ScreenGui
+        local traitTip = newLabel(ScreenGui, {
+            BackgroundColor3=Color3.fromRGB(14,14,24),
+            Position=UDim2.new(0,0,0,0),
+            Size=UDim2.new(0,0,0,26),
+            AutomaticSize=Enum.AutomaticSize.X,
+            Visible=false, ZIndex=500,
+            Font=Enum.Font.Gotham, TextSize=10,
+            TextColor3=Color3.fromRGB(180,180,200), TextWrapped=false,
+            Text="",
         })
-        chipGrid.AutomaticSize=Enum.AutomaticSize.Y
-        chipGrid.LayoutOrder=2
+        addCorner(traitTip,6)
+        addStroke(traitTip,1,Color3.fromRGB(44,44,66))
+        addPadding(traitTip,7)
 
-        local cgl=Instance.new("UIGridLayout")
-        cgl.CellSize=UDim2.new(0.333,-4,0,32)
-        cgl.CellPadding=UDim2.new(0,5,0,5)
-        cgl.SortOrder=Enum.SortOrder.LayoutOrder
-        cgl.Parent=chipGrid
-
-        for ci, trait in ipairs(TRAITS) do
-            local sel=table.find(wData.traits,trait)~=nil
-            local tv=trait
-            local chip=newButton(chipGrid,{
-                BackgroundColor3=sel and Color3.fromRGB(12,12,36) or Color3.fromRGB(20,20,32),
-                Size=UDim2.new(0,1,0,1),
-                Font=Enum.Font.GothamSemibold, TextSize=11,
-                TextColor3=sel and Color3.fromRGB(170,170,238) or C.textDim,
-                Text=tv, ZIndex=24,
+        local chipOrder=0
+        for _, group in ipairs(TRAIT_GROUPS) do
+            -- rarity header label
+            local hdr=newLabel(wizScroll,{
+                Size=UDim2.new(1,-28,0,18),
+                Font=Enum.Font.GothamBold, TextSize=10,
+                TextColor3=group.color, Text=group.rarity:upper(),
+                BackgroundTransparency=1, ZIndex=23,
             })
-            chip.LayoutOrder=ci
-            addCorner(chip,8)
-            addStroke(chip,1.5,sel and Color3.fromRGB(85,85,187) or Color3.fromRGB(30,30,48))
-            chip.MouseButton1Click:Connect(function()
-                local idx=table.find(wData.traits,tv)
-                if idx then
-                    table.remove(wData.traits,idx)
-                else
-                    table.insert(wData.traits,tv)
-                end
-                setWizStep(2)
-            end)
+            chipOrder+=1; hdr.LayoutOrder=chipOrder
+
+            local chipGrid=newFrame(wizScroll,{
+                BackgroundTransparency=1,
+                Size=UDim2.new(1,-28,0,0), ZIndex=23,
+            })
+            chipGrid.AutomaticSize=Enum.AutomaticSize.Y
+            chipOrder+=1; chipGrid.LayoutOrder=chipOrder
+
+            local cgl=Instance.new("UIGridLayout")
+            cgl.CellSize=UDim2.new(0.333,-4,0,32)
+            cgl.CellPadding=UDim2.new(0,5,0,5)
+            cgl.SortOrder=Enum.SortOrder.LayoutOrder
+            cgl.Parent=chipGrid
+
+            for ci, tdata in ipairs(group.traits) do
+                local tv=tdata.name
+                local eff=tdata.effect
+                local sel=table.find(wData.traits,tv)~=nil
+                local gc=group.color
+                local chip=newButton(chipGrid,{
+                    BackgroundColor3=sel and Color3.new(gc.R*0.08,gc.G*0.08,gc.B*0.08) or Color3.fromRGB(20,20,32),
+                    Size=UDim2.new(0,1,0,1),
+                    Font=Enum.Font.GothamBold, TextSize=11,
+                    TextColor3=sel and Color3.fromRGB(235,235,235) or C.textDim,
+                    Text=tv, ZIndex=24,
+                })
+                chip.LayoutOrder=ci
+                addCorner(chip,8)
+                addStroke(chip,sel and 2 or 1, sel and gc or Color3.fromRGB(30,30,48))
+                chip.MouseButton1Click:Connect(function()
+                    local idx=table.find(wData.traits,tv)
+                    if idx then table.remove(wData.traits,idx)
+                    else table.insert(wData.traits,tv) end
+                    setWizStep(2)
+                end)
+                chip.MouseEnter:Connect(function(x,y)
+                    traitTip.Text=eff
+                    local tipW = traitTip.AbsoluteSize.X > 0 and traitTip.AbsoluteSize.X or 220
+                    local screenW = workspace.CurrentCamera.ViewportSize.X
+                    local hudX = hudHolder.AbsolutePosition.X + hudHolder.AbsoluteSize.X * 0.5
+                    local onRight = hudX > screenW * 0.5
+                    local px = onRight and (x - tipW - 6) or (x + 14)
+                    local tipH=traitTip.AbsoluteSize.Y>0 and traitTip.AbsoluteSize.Y or 26
+                    traitTip.Position=UDim2.new(0,px,0,y-tipH-6)
+                    traitTip.Visible=true
+                end)
+                chip.MouseMoved:Connect(function(x,y)
+                    local tipW = traitTip.AbsoluteSize.X > 0 and traitTip.AbsoluteSize.X or 220
+                    local screenW = workspace.CurrentCamera.ViewportSize.X
+                    local hudX = hudHolder.AbsolutePosition.X + hudHolder.AbsoluteSize.X * 0.5
+                    local onRight = hudX > screenW * 0.5
+                    local px = onRight and (x - tipW - 6) or (x + 14)
+                    local tipH=traitTip.AbsoluteSize.Y>0 and traitTip.AbsoluteSize.Y or 26
+                    traitTip.Position=UDim2.new(0,px,0,y-tipH-6)
+                end)
+                chip.MouseButton1Click:Connect(function()
+                    traitTip.Visible=false
+                end)
+                chip.MouseLeave:Connect(function()
+                    traitTip.Visible=false
+                end)
+            end
         end
 
         wizNextBtn.Text="Save ✓"
@@ -1783,6 +1894,7 @@ wizNextBtn.MouseButton1Click:Connect(function()
         })
         renderConditions()
         wizWin.Visible=false
+        settingsWin.Visible=true
     end
 end)
 wizBackBtn.MouseButton1Click:Connect(function()
@@ -1795,10 +1907,12 @@ wizSkipBtn.MouseButton1Click:Connect(function()
 end)
 wizCloseBtn.MouseButton1Click:Connect(function()
     wizWin.Visible=false
+    settingsWin.Visible=true
 end)
 
 addCondBtn.MouseButton1Click:Connect(function()
     wData={stands={},minStr="A",minSpd="A",minSpc="A",skins={},traits={}}
+    settingsWin.Visible=false
     setWizStep(0)
     task.defer(function()
         local vp = workspace.CurrentCamera.ViewportSize
