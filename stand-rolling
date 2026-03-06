@@ -1035,11 +1035,13 @@ local savedConfigs = {}
 local selectedConfig = nil
 local autoloadName = nil
 
-local cfgStore = LocalPlayer:WaitForChild("PlayerData"):FindFirstChild("HUDConfigs")
-if not cfgStore then
-    cfgStore = Instance.new("StringValue")
-    cfgStore.Name = "HUDConfigs"
-    cfgStore.Parent = LocalPlayer:WaitForChild("PlayerData")
+local CFG_FILE = "StandRollHUD_configs.json"
+local function fileRead()
+    local ok, data = pcall(readfile, CFG_FILE)
+    return (ok and type(data)=="string") and data or ""
+end
+local function fileWrite(data)
+    pcall(writefile, CFG_FILE, data)
 end
 
 local function serializeConfig()
@@ -1104,9 +1106,7 @@ local function persistConfigs()
         table.insert(t.configs, cfg)
     end
     local ok, encoded = pcall(HttpService.JSONEncode, HttpService, t)
-    if ok then
-        cfgStore.Value = encoded
-    end
+    if ok then fileWrite(encoded) end
 end
 
 local function renderConfigList()
@@ -1251,7 +1251,7 @@ end)
 
 -- Load persisted configs from StringValue on start
 do
-    local raw = cfgStore.Value
+    local raw = fileRead()
     if raw and raw~="" then
         local ok, t = pcall(HttpService.JSONDecode, HttpService, raw)
         if ok and type(t)=="table" then
