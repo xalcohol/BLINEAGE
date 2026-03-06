@@ -993,7 +993,6 @@ saveConfigBtn.LayoutOrder=3
 addCorner(saveConfigBtn,7)
 addStroke(saveConfigBtn,1.5,Color3.fromRGB(26,64,38))
 
-local _autoloadRow, getAutoload, setAutoload = makeToggleRow(cfgBody,"Autoload on join",false,4)
 
 local cfgDropBtn=newButton(cfgBody,{
     BackgroundColor3=Color3.fromRGB(18,18,30),
@@ -2019,7 +2018,22 @@ settingsCloseBtn.MouseButton1Click:Connect(function() closeAllSubWins() end)
 webhookCloseBtn.MouseButton1Click:Connect(function()  closeAllSubWins() end)
 configCloseBtn.MouseButton1Click:Connect(function()   closeAllSubWins() end)
 
-autoBtn.MouseButton1Click:Connect(toggleAutoroll)
+autoBtn.MouseButton1Click:Connect(function()
+    -- block if current stand meets a condition
+    if not autoroll and stopReason ~= "IDLE" and stopReason ~= "MANUAL" and stopReason ~= "" then
+        -- flash the status label to signal why it's locked
+        local origColor = statusLabel.TextColor3
+        local origText  = statusLabel.Text
+        for _=1,3 do
+            statusLabel.TextColor3 = Color3.fromRGB(220,60,60)
+            task.wait(0.12)
+            statusLabel.TextColor3 = origColor
+            task.wait(0.12)
+        end
+        return
+    end
+    toggleAutoroll()
+end)
 killBtn.MouseButton1Click:Connect(killScript)
 
 -- ═══════════════════════════════════════════════════════════
@@ -2168,10 +2182,19 @@ table.insert(connections, RunService.RenderStepped:Connect(function()
         statusLabel.Text="rolling..."
         statusLabel.TextColor3=Color3.fromRGB(170,40,40)
     else
-        autoBtn.BackgroundColor3=C.btnBg
-        autoBtnStroke.Color=C.btnBorder
-        autoBtn.TextColor3=C.textDim
-        autoBtn.Text="AUTO OFF"
+        local condLocked = stopReason ~= "IDLE" and stopReason ~= "MANUAL" and stopReason ~= ""
+        if condLocked then
+            local p=(math.sin(t*3)+1)*0.5
+            autoBtn.BackgroundColor3=lerpColor(Color3.fromRGB(14,14,14),Color3.fromRGB(22,22,22),p)
+            autoBtnStroke.Color=lerpColor(Color3.fromRGB(40,40,40),Color3.fromRGB(70,70,70),p)
+            autoBtn.TextColor3=Color3.fromRGB(50,50,60)
+            autoBtn.Text="LOCKED"
+        else
+            autoBtn.BackgroundColor3=C.btnBg
+            autoBtnStroke.Color=C.btnBorder
+            autoBtn.TextColor3=C.textDim
+            autoBtn.Text="AUTO OFF"
+        end
         local sc,st=C.textFaint,"IDLE"
         if     stopReason=="GLOBAL_JACKPOT" or stopReason=="CONDITION_JACKPOT" then sc=C.gold;   st="✦  jackpot!"
         elseif stopReason=="CONDITION_TRAIT"   then sc=C.purple; st="★  trait match"
