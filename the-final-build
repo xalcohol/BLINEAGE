@@ -63,6 +63,7 @@ local TRAIT_GROUPS = {
         {name="Transcendent", effect="+5% Damage, +5% Power Regen, +5% Global Defense"},
         {name="Feral",        effect="+10% Damage, -10% Global Defense"},
         {name="Demonic",      effect="+50% Lifesteal Efficiency"},
+        {name="Elegant",      effect="Effect unknown"},
     }},
     { rarity="Legendary",  color=Color3.fromRGB(220,160,40), traits={
         {name="Cursed",       effect="+4% Damage, +4% Power Regen, +4% Global Defense"},
@@ -202,7 +203,7 @@ local function checkStop(info)
     local traitLower = info.trait:lower()
 
     -- Global jackpot: all S + selected skin + mythical trait
-    local MYTHICAL_TRAITS = {"transcendent","feral","demonic"}
+    local MYTHICAL_TRAITS = {"transcendent","feral","demonic","elegant"}
     local isMythical = false
     for _, mt in ipairs(MYTHICAL_TRAITS) do
         if traitLower == mt then isMythical=true; break end
