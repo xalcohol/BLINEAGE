@@ -151,7 +151,7 @@ local function setRunning(state)
 				task.wait(INTERVAL)
 			end
 
-			-- Phase 2: reap Rare Chest down to 900, one at a time
+			-- Phase 2: reap Rare Chest down to 900, feeding full stack each cycle
 			if running then
 				local rare = getChestCount("Rare Chest")
 				if rare and rare > 900 then
@@ -160,7 +160,7 @@ local function setRunning(state)
 					while running do
 						rare = getChestCount("Rare Chest")
 						if not rare or rare <= 900 then break end
-						fireDestroy("Rare Chest", 1)
+						fireDestroy("Rare Chest", rare)
 						task.wait(INTERVAL)
 					end
 				end
