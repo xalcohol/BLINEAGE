@@ -1,4 +1,4 @@
--- Chest Auto-Destroyer A
+-- Chest Auto-Destroyer
 -- Auto-starts on launch, toggle to pause
 
 local Players = game:GetService("Players")
@@ -53,8 +53,8 @@ local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(0, 130, 0, 20)
 statusLabel.Position = UDim2.new(0, 10, 0, 38)
 statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Running"
-statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+statusLabel.Text = "Status: Waiting..."
+statusLabel.TextColor3 = Color3.fromRGB(200, 180, 60)
 statusLabel.TextSize = 12
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -97,16 +97,7 @@ btnCorner.Parent = button
 
 local function getChestCount(chestName)
 	local ok, result = pcall(function()
-		local numberLabel = PlayerGui
-			:WaitForChild("Inventory", 2)
-			:WaitForChild("CanvasGroup", 2)
-			:WaitForChild("backpack_frame", 2)
-			:WaitForChild("enlarging_frame", 2)
-			:WaitForChild("holder", 2)
-			:WaitForChild(chestName, 1)
-			:WaitForChild("Holder", 1)
-			:WaitForChild("Holder", 1)
-			:WaitForChild("Number", 1)
+		local numberLabel = PlayerGui.Inventory.CanvasGroup.backpack_frame.enlarging_frame.holder[chestName].Holder.Holder.Number
 		return numberLabel.Text
 	end)
 	if not ok then return nil end
@@ -133,12 +124,22 @@ local function setRunning(state)
 	if running then
 		button.Text = "STOP"
 		button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-		statusLabel.Text = "Status: Running"
-		statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
 
 		loopThread = task.spawn(function()
+			-- Gate: wait indefinitely for inventory + Common Chest to exist
+			statusLabel.Text = "Status: Waiting..."
+			statusLabel.TextColor3 = Color3.fromRGB(200, 180, 60)
+			PlayerGui
+				:WaitForChild("Inventory")
+				:WaitForChild("CanvasGroup")
+				:WaitForChild("backpack_frame")
+				:WaitForChild("enlarging_frame")
+				:WaitForChild("holder")
+				:WaitForChild("Common Chest")
+
 			-- Phase 1: hammer Common Chest until gone
 			statusLabel.Text = "Status: Common..."
+			statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
 			while running do
 				local common = getChestCount("Common Chest")
 				if not common or common <= 0 then break end
@@ -149,6 +150,7 @@ local function setRunning(state)
 			-- Phase 2: hammer Rare Chest until gone
 			if running then
 				statusLabel.Text = "Status: Rare..."
+				statusLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
 				while running do
 					local rare = getChestCount("Rare Chest")
 					if not rare or rare <= 0 then break end
