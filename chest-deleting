@@ -126,18 +126,22 @@ local function setRunning(state)
 		button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
 
 		loopThread = task.spawn(function()
-			-- Gate: wait indefinitely for inventory + Common Chest to exist
+			-- Gate: wait until either Common or Rare Chest appears
 			statusLabel.Text = "Status: Waiting..."
 			statusLabel.TextColor3 = Color3.fromRGB(200, 180, 60)
-			PlayerGui
+
+			local holder = PlayerGui
 				:WaitForChild("Inventory")
 				:WaitForChild("CanvasGroup")
 				:WaitForChild("backpack_frame")
 				:WaitForChild("enlarging_frame")
 				:WaitForChild("holder")
-				:WaitForChild("Common Chest")
 
-			-- Phase 1: hammer Common Chest down to 0
+			while running and not holder:FindFirstChild("Common Chest") and not holder:FindFirstChild("Rare Chest") do
+				task.wait(0.5)
+			end
+
+			-- Phase 1: hammer Common Chest down to 0 (skips instantly if none)
 			statusLabel.Text = "Status: Common..."
 			statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
 			while running do
