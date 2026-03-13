@@ -1,0 +1,178 @@
+-- Chest Auto-Destroyer
+-- Auto-starts on launch, toggle to pause
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Config
+local INTERVAL = 0.1
+local running = true
+local loopThread = nil
+
+-- ╔══════════════════════════════╗
+-- ║         GUI SETUP            ║
+-- ╚══════════════════════════════╝
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ChestDestroyer"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 80)
+frame.Position = UDim2.new(1, -265, 0, 8)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -10, 0, 30)
+title.Position = UDim2.new(0, 10, 0, 8)
+title.BackgroundTransparency = 1
+title.Text = "📦 Chest Destroyer"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 15
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
+
+-- Status label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 130, 0, 20)
+statusLabel.Position = UDim2.new(0, 10, 0, 38)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: Running"
+statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+statusLabel.TextSize = 12
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = frame
+
+-- Kill Button (trash icon)
+local killButton = Instance.new("TextButton")
+killButton.Size = UDim2.new(0, 26, 0, 22)
+killButton.Position = UDim2.new(1, -38, 0, 38)
+killButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+killButton.BorderSizePixel = 0
+killButton.Text = "🗑️"
+killButton.TextSize = 14
+killButton.Font = Enum.Font.GothamBold
+killButton.Parent = frame
+
+local killCorner = Instance.new("UICorner")
+killCorner.CornerRadius = UDim.new(0, 6)
+killCorner.Parent = killButton
+
+-- Toggle Button
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 70, 0, 22)
+button.Position = UDim2.new(1, -112, 0, 38)
+button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+button.BorderSizePixel = 0
+button.Text = "STOP"
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.TextSize = 12
+button.Font = Enum.Font.GothamBold
+button.Parent = frame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = button
+
+-- ╔══════════════════════════════╗
+-- ║         CORE LOGIC           ║
+-- ╚══════════════════════════════╝
+
+local function getChestCount(chestName)
+	local ok, result = pcall(function()
+		local numberLabel = PlayerGui
+			:WaitForChild("Inventory")
+			:WaitForChild("CanvasGroup")
+			:WaitForChild("backpack_frame")
+			:WaitForChild("enlarging_frame")
+			:WaitForChild("holder")
+			:WaitForChild(chestName)
+			:WaitForChild("Holder")
+			:WaitForChild("Holder")
+			:WaitForChild("Number")
+		return numberLabel.Text
+	end)
+	if not ok then return nil end
+	return tonumber(tostring(result):match("(%d+)x?"))
+end
+
+local function fireDestroy(name, amount)
+	local args = {
+		{
+			Name = name,
+			Amount = amount
+		}
+	}
+	ReplicatedStorage
+		:WaitForChild("requests")
+		:WaitForChild("general")
+		:WaitForChild("DestroyItem")
+		:FireServer(unpack(args))
+end
+
+local function setRunning(state)
+	running = state
+
+	if running then
+		button.Text = "STOP"
+		button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+		statusLabel.Text = "Status: Running"
+		statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+
+		loopThread = task.spawn(function()
+			while running do
+				local common = getChestCount("Common Chest")
+				if common and common > 0 then
+					fireDestroy("Common Chest", common)
+				end
+
+				local rare = getChestCount("Rare Chest")
+				if rare and rare > 0 then
+					fireDestroy("Rare Chest", rare)
+				end
+
+				task.wait(INTERVAL)
+			end
+		end)
+	else
+		button.Text = "START"
+		button.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+		statusLabel.Text = "Status: Idle"
+		statusLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+
+		if loopThread then
+			task.cancel(loopThread)
+			loopThread = nil
+		end
+	end
+end
+
+button.MouseButton1Click:Connect(function()
+	setRunning(not running)
+end)
+
+killButton.MouseButton1Click:Connect(function()
+	if loopThread then
+		task.cancel(loopThread)
+	end
+	screenGui:Destroy()
+end)
+
+-- Auto-start on launch
+setRunning(true)
