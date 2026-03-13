@@ -19,6 +19,7 @@ local loopThread = nil
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ChestDestroyer"
 screenGui.ResetOnSpawn = false
+screenGui.ScreenInsets = Enum.ScreenInsets.None
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
 
