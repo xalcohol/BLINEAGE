@@ -137,7 +137,7 @@ local function setRunning(state)
 				:WaitForChild("holder")
 				:WaitForChild("Common Chest")
 
-			-- Phase 1: hammer Common Chest until gone
+			-- Phase 1: hammer Common Chest down to 0
 			statusLabel.Text = "Status: Common..."
 			statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
 			while running do
@@ -147,15 +147,19 @@ local function setRunning(state)
 				task.wait(INTERVAL)
 			end
 
-			-- Phase 2: hammer Rare Chest until gone
+			-- Phase 2: reap Rare Chest down to 900
 			if running then
-				statusLabel.Text = "Status: Rare..."
-				statusLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
-				while running do
-					local rare = getChestCount("Rare Chest")
-					if not rare or rare <= 0 then break end
-					fireDestroy("Rare Chest", rare)
-					task.wait(INTERVAL)
+				local rare = getChestCount("Rare Chest")
+				if rare and rare > 900 then
+					statusLabel.Text = "Status: Rare..."
+					statusLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
+					while running do
+						rare = getChestCount("Rare Chest")
+						if not rare or rare <= 900 then break end
+						local excess = rare - 900
+						fireDestroy("Rare Chest", excess)
+						task.wait(INTERVAL)
+					end
 				end
 			end
 
