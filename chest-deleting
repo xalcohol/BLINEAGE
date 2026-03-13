@@ -1,4 +1,4 @@
--- Chest Auto-Destroyer
+-- Chest Auto-Destroyer A
 -- Auto-starts on launch, toggle to pause
 
 local Players = game:GetService("Players")
